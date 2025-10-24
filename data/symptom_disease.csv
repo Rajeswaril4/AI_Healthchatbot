@@ -1,0 +1,6 @@
+symptoms,disease,description,precautions,doctor_specialty
+fever,cold,Common cold is a viral infection,Drink fluids; rest well; take paracetamol,General Physician
+fever,covid-19,A contagious respiratory illness,Isolate; wear a mask; stay hydrated; consult doctor,Pulmonologist
+headache,migraine,Severe throbbing pain or pulsing sensation,Rest in dark room; avoid noise; consult neurologist,Neurologist
+cough,bronchitis,Inflammation of bronchial tubes,Drink warm fluids; avoid smoking; use humidifier,Pulmonologist
+stomach pain,food poisoning,Infection from contaminated food,Drink ORS; rest; consult physician,General Physician
