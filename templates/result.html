@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Diagnosis Result | AI HealthBot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://kit.fontawesome.com/a2e0e6f5b4.js" crossorigin="anonymous" defer></script>
+</head>
+<body>
+  <!-- Decorative full-screen background image (toggled on/off) -->
+  <div id="bgImage" class="bg-image" aria-hidden="true" data-src="{{ url_for('static', filename='image/img.webp') }}"></div>
+
+  <!-- 3D animated background (non-interactive) -->
+  <div class="bg-3d" id="bg3d" aria-hidden="true">
+    <div class="bg-layer" data-speed="0.06">
+      <div class="bg-shape s1" data-depth="8"></div>
+      <div class="bg-shape s2" data-depth="14"></div>
+    </div>
+    <div class="bg-layer" data-speed="0.04">
+      <div class="bg-shape s3" data-depth="20"></div>
+      <div class="bg-shape s4" data-depth="12"></div>
+    </div>
+    <div class="bg-layer" data-speed="0.02">
+      <div class="bg-shape s5" data-depth="30"></div>
+    </div>
+  </div>
+
+  <header>
+    <h1>🩺 AI HealthBot</h1>
+
+    <div class="header-controls" role="group" aria-label="Appearance controls">
+      <button id="theme-toggle" class="theme-btn" aria-pressed="false" aria-label="Toggle theme">
+        <img id="theme-icon"
+             data-sun="{{ url_for('static', filename='icons/sun.svg') }}"
+             data-moon="{{ url_for('static', filename='icons/moon.svg') }}"
+             src="{{ url_for('static', filename='icons/sun.svg') }}"
+             alt="Theme icon" />
+      </button>
+
+      <button id="bg-toggle" class="theme-btn" aria-pressed="false" aria-label="Toggle background image">
+        <span id="bg-icon" aria-hidden="true">🖼️</span>
+        <span class="sr-only">Toggle background image</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="result-card" role="region" aria-labelledby="disease-heading">
+      <h1 id="disease-heading" class="disease-name">🧬 {{ result.disease }}</h1>
+
+      <div class="meta-row">
+        <div class="meta-item">
+          <h2 class="section-title"><i class="fas fa-user-md"></i> Specialist</h2>
+          <p class="specialist">{{ result.doctor_specialty }}</p>
+        </div>
+
+        <div class="meta-item">
+          <h2 class="section-title"><i class="fas fa-calendar-check"></i> Confidence</h2>
+          <p class="specialist">Model confidence: <strong>{{ result.get('confidence', 'N/A') }}</strong></p>
+          <div class="confidence-meter" aria-hidden="true" style="margin-top:8px;">
+            <div class="confidence-fill" data-conf="{{ result.get('conf_num', '') }}"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2 class="section-title"><i class="fas fa-list"></i> Selected Symptoms</h2>
+        {% if result.selected_symptoms %}
+          <div class="selected-symptoms" aria-live="polite">
+            {% for s in result.selected_symptoms %}
+              <span class="selected-symptom">{{ s.replace('_',' ') | title }}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-muted">No symptoms were selected.</p>
+        {% endif %}
+      </div>
+
+      <div class="section">
+        <h2 class="section-title"><i class="fas fa-notes-medical"></i> Brief Description</h2>
+        <p class="description">{{ result.description }}</p>
+      </div>
+
+      <div class="section">
+        <h2 class="section-title"><i class="fas fa-shield-alt"></i> Recommended Precautions</h2>
+        <ul class="precautions">
+          {% for p in result.precautions %}
+            <li>{{ p }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="actions">
+        <a href="{{ url_for('index') }}" class="btn btn-primary" aria-label="Go back and change symptoms">🔁 Go Back</a>
+        <a href="#" id="print-btn" class="btn btn-outline" onclick="window.print();return false;" aria-label="Print result">🖨️ Print</a>
+      </div>
+    </div>
+  </main>
+
+  <script src="{{ url_for('static', filename='style.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI HealthBot | Symptom Checker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://kit.fontawesome.com/a2e0e6f5b4.js" crossorigin="anonymous" defer></script>
+</head>
+
+<body>
+
+  <div id="bgImage" class="bg-image" aria-hidden="true" data-src="{{ url_for('static', filename='image/img.webp') }}"></div>
+
+  <!-- 3D animated background (non-interactive) -->
+  <div class="bg-3d" id="bg3d" aria-hidden="true">
+    <div class="bg-layer" data-speed="0.06">
+      <div class="bg-shape s1" data-depth="8"></div>
+      <div class="bg-shape s2" data-depth="14"></div>
+    </div>
+    <div class="bg-layer" data-speed="0.04">
+      <div class="bg-shape s3" data-depth="20"></div>
+      <div class="bg-shape s4" data-depth="12"></div>
+    </div>
+    <div class="bg-layer" data-speed="0.02">
+      <div class="bg-shape s5" data-depth="30"></div>
+    </div>
+  </div>
+
+  <header>
+    <h1>🩺 AI HealthBot</h1>
+
+    <div class="header-controls" role="group" aria-label="Appearance controls">
+    
+      <button id="theme-toggle" class="theme-btn" aria-pressed="false" aria-label="Toggle theme">
+        <img id="theme-icon"
+             data-sun="{{ url_for('static', filename='icons/sun.svg') }}"
+             data-moon="{{ url_for('static', filename='icons/moon.svg') }}"
+             src="{{ url_for('static', filename='icons/sun.svg') }}"
+             alt="Theme icon" />
+      </button>
+
+      <!-- Background image toggle -->
+      <button id="bg-toggle" class="theme-btn" aria-pressed="false" aria-label="Toggle background image">
+        <span id="bg-icon" aria-hidden="true">🖼️</span>
+        <span class="sr-only">Toggle background image</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="container">
+    <h2>Select Your Symptoms</h2>
+    <input type="text" id="search" placeholder="Search symptoms..." autocomplete="off" />
+
+    <form action="{{ url_for('predict') }}" method="post" id="symptom-form" novalidate>
+      <div id="symptom-grid">
+        {% for symptom in symptoms %}
+        <div
+          class="symptom-card"
+          data-symptom="{{ symptom }}"
+          role="button"
+          tabindex="0"
+          aria-pressed="false"
+          aria-label="{{ symptom.replace('_', ' ') | title }}">
+          <span class="symptom-label">{{ symptom.replace('_', ' ') | title }}</span>
+        </div>
+        {% endfor %}
+      </div>
+
+      
+      <div id="hidden-inputs" aria-hidden="true"></div>
+
+      <div class="form-row">
+        <button type="submit" class="predict-btn">Predict Disease</button>
+      </div>
+    </form>
+  </main>
+
+  <script src="{{ url_for('static', filename='style.js') }}"></script>
+</body>
+</html>
