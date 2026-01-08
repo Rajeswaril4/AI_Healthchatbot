@@ -1,0 +1,253 @@
+.home-container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.content-wrapper {
+  background: var(--card-light);
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+body.dark .content-wrapper {
+  background: var(--card-dark);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.page-title {
+  text-align: center;
+  color: var(--accent);
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 24px;
+}
+
+body.dark .page-title {
+  color: var(--accent-dark);
+}
+
+/* Search */
+.search-container {
+  margin-bottom: 24px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 14px 20px;
+  border-radius: 10px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  font-size: 1rem;
+  background: var(--bg-light);
+  color: var(--text-light);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+body.dark .search-input {
+  background: var(--bg-dark);
+  color: var(--text-dark);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.1);
+}
+
+/* Symptom Grid */
+.symptom-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 18px;
+  margin: 24px 0;
+}
+
+.symptom-card {
+  position: relative;
+  padding: 20px 16px 20px 48px;
+  background: var(--card-light);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  border: 2px solid transparent;
+}
+
+body.dark .symptom-card {
+  background: var(--card-dark);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.symptom-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.symptom-card::before {
+  content: '✓';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%) scale(0.8);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  opacity: 0;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-light);
+  transition: all 0.2s ease;
+}
+
+body.dark .symptom-card::before {
+  color: var(--text-dark);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.symptom-card.selected {
+  background: linear-gradient(135deg, #e6b8d5 0%, #8b3a5a 60%, #fa93c7 100%);
+  color: #fff;
+  border-color: #8b3a5a;
+  box-shadow: 0 8px 24px rgba(139, 58, 90, 0.3);
+}
+
+body.dark .symptom-card.selected {
+  background: linear-gradient(135deg, #9ad7c0 0%, #4fbf9a 50%, #216b53 100%);
+  color: #1a1a1a;
+  border-color: #4fbf9a;
+}
+
+.symptom-card.selected::before {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+body.dark .symptom-card.selected::before {
+  color: #1a1a1a;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.symptom-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+/* Selected Summary */
+.selected-summary {
+  text-align: center;
+  margin: 20px 0;
+  padding: 12px;
+  background: rgba(74, 144, 226, 0.1);
+  border-radius: 8px;
+  font-weight: 500;
+  color: var(--primary-color);
+}
+
+body.dark .selected-summary {
+  background: rgba(123, 211, 137, 0.15);
+  color: var(--accent-dark);
+}
+
+/* Form Actions */
+.form-actions {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
+
+.predict-btn {
+  padding: 14px 32px;
+  border-radius: 11px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+  border: none;
+  background: linear-gradient(180deg, #3a1636, #1f0c1e);
+  box-shadow: 0 8px 20px rgba(59, 27, 43, 0.22);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.predict-btn:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(59, 27, 43, 0.35);
+}
+
+.predict-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.clear-btn {
+  padding: 14px 28px;
+  border-radius: 11px;
+  font-size: 1rem;
+  font-weight: 600;
+  background: transparent;
+  border: 2px solid rgba(231, 76, 60, 0.5);
+  color: #e74c3c;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clear-btn:hover {
+  background: rgba(231, 76, 60, 0.1);
+  border-color: #e74c3c;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .symptom-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+  }
+
+  .symptom-card {
+    min-height: 65px;
+    padding: 16px 12px 16px 44px;
+  }
+}
+
+@media (max-width: 600px) {
+  .content-wrapper {
+    padding: 20px;
+  }
+
+  .page-title {
+    font-size: 1.5rem;
+  }
+
+  .symptom-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .symptom-card {
+    font-size: 0.9rem;
+    padding: 14px 10px 14px 40px;
+  }
+
+  .form-actions {
+    flex-direction: column;
+  }
+
+  .predict-btn,
+  .clear-btn {
+    width: 100%;
+  }
+}

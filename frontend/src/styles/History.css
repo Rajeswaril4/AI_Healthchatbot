@@ -1,0 +1,299 @@
+.history-container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.history-header h2 {
+  color: var(--accent);
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+body.dark .history-header h2 {
+  color: var(--accent-dark);
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.no-history {
+  text-align: center;
+  padding: 60px 20px;
+  background: var(--card-light);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+body.dark .no-history {
+  background: var(--card-dark);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.no-history p {
+  font-size: 1.2rem;
+  color: #667085;
+  margin-bottom: 24px;
+}
+
+body.dark .no-history p {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.history-table-container {
+  background: var(--card-light);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  overflow-x: auto;
+}
+
+body.dark .history-table-container {
+  background: var(--card-dark);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.history-table thead th {
+  text-align: left;
+  padding: 14px 16px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--primary-color);
+  border-bottom: 2px solid rgba(74, 144, 226, 0.2);
+  white-space: nowrap;
+}
+
+body.dark .history-table thead th {
+  color: var(--accent-dark);
+  border-bottom-color: rgba(123, 211, 137, 0.2);
+}
+
+.history-table tbody td {
+  padding: 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  vertical-align: middle;
+}
+
+body.dark .history-table tbody td {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+.history-table tbody tr:hover {
+  background: rgba(74, 144, 226, 0.05);
+}
+
+body.dark .history-table tbody tr:hover {
+  background: rgba(123, 211, 137, 0.08);
+}
+
+.history-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.date-cell {
+  color: #667085;
+  font-size: 0.9rem;
+  min-width: 140px;
+}
+
+body.dark .date-cell {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.disease-cell {
+  font-weight: 700;
+  color: var(--text-light);
+  min-width: 150px;
+}
+
+body.dark .disease-cell {
+  color: var(--text-dark);
+}
+
+.confidence-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: linear-gradient(90deg, rgba(217, 98, 135, 0.15), rgba(112, 70, 78, 0.1));
+  color: #8b3a5a;
+  font-weight: 700;
+  font-size: 0.9rem;
+  border: 1px solid rgba(139, 58, 90, 0.2);
+}
+
+body.dark .confidence-badge {
+  background: linear-gradient(90deg, rgba(123, 211, 137, 0.2), rgba(79, 191, 154, 0.1));
+  color: var(--accent-dark);
+  border-color: rgba(123, 211, 137, 0.3);
+}
+
+.symptoms-cell {
+  color: #667085;
+  max-width: 400px;
+  word-break: break-word;
+  white-space: normal;
+  line-height: 1.5;
+  font-size: 0.9rem;
+}
+
+body.dark .symptoms-cell {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.specialist-cell {
+  color: var(--primary-color);
+  font-weight: 600;
+  min-width: 150px;
+}
+
+body.dark .specialist-cell {
+  color: var(--accent-dark);
+}
+
+.history-summary {
+  text-align: center;
+  margin-top: 20px;
+  padding: 16px;
+  background: rgba(74, 144, 226, 0.08);
+  border-radius: 10px;
+  font-size: 0.95rem;
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+body.dark .history-summary {
+  background: rgba(123, 211, 137, 0.12);
+  color: var(--accent-dark);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .symptoms-column {
+    display: none;
+  }
+
+  .symptoms-cell {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .history-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .history-header h2 {
+    font-size: 1.6rem;
+  }
+
+  .history-table-container {
+    padding: 16px;
+  }
+
+  .history-table {
+    font-size: 0.85rem;
+  }
+
+  .history-table thead th {
+    padding: 10px 12px;
+    font-size: 0.85rem;
+  }
+
+  .history-table tbody td {
+    padding: 12px;
+    font-size: 0.85rem;
+  }
+
+  .date-cell,
+  .disease-cell,
+  .specialist-cell {
+    min-width: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  /* Stack table as cards on mobile */
+  .history-table-container {
+    padding: 12px;
+  }
+
+  .history-table,
+  .history-table thead,
+  .history-table tbody,
+  .history-table th,
+  .history-table td,
+  .history-table tr {
+    display: block;
+  }
+
+  .history-table thead tr {
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+  }
+
+  .history-table tbody tr {
+    margin-bottom: 20px;
+    background: rgba(74, 144, 226, 0.04);
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  body.dark .history-table tbody tr {
+    background: rgba(123, 211, 137, 0.05);
+    border-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .history-table tbody td {
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    position: relative;
+    padding-left: 50%;
+  }
+
+  body.dark .history-table tbody td {
+    border-bottom-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .history-table tbody td:last-child {
+    border-bottom: none;
+  }
+
+  .history-table tbody td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 0;
+    width: 45%;
+    padding-right: 10px;
+    font-weight: 700;
+    color: var(--primary-color);
+  }
+
+  body.dark .history-table tbody td::before {
+    color: var(--accent-dark);
+  }
+
+  .symptoms-cell {
+    display: block;
+  }
+}
