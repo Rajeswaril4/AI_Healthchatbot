@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{% block title %}AI HealthBot{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://kit.fontawesome.com/a2e0e6f5b4.js" crossorigin="anonymous" defer></script>
+</head>
+
+<body>
+  
+  <div id="bgImage" class="bg-image" aria-hidden="true" data-src="{{ url_for('static', filename='image/img.webp') }}"></div>
+
+  
+  <div id="animated-gradient-bg" class="bga" aria-hidden="true">
+    <svg class="bga-defs" width="0" height="0" aria-hidden="true" focusable="false">
+      <defs>
+        <filter id="bga-blur">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur" />
+          <feColorMatrix in="blur" mode="matrix"
+            values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -8" result="goo" />
+          <feBlend in="SourceGraphic" in2="goo" />
+        </filter>
+      </defs>
+    </svg>
+    <div class="gradients-container">
+      <div class="blob blob1"></div>
+      <div class="blob blob2"></div>
+      <div class="blob blob3"></div>
+      <div class="blob blob4"></div>
+      <div class="blob blob5"></div>
+    </div>
+  </div>
+
+  <header>
+    <h1>🩺 AI HealthBot</h1>
+
+    <nav class="header-controls" role="navigation" aria-label="Main navigation">
+      <a class="nav-link" href="{{ url_for('index') }}">Home</a>
+      {% if current_user.is_authenticated %}
+        <a class="nav-link" href="{{ url_for('history') }}">History</a>
+        <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+      {% else %}
+        <a class="nav-link" href="{{ url_for('login') }}">Login</a>
+        <a class="nav-link" href="{{ url_for('register') }}">Register</a>
+      {% endif %}
+
+      <button id="theme-toggle" class="theme-btn" aria-pressed="false" aria-label="Toggle theme">
+        <img id="theme-icon"
+             data-sun="{{ url_for('static', filename='icons/sun.svg') }}"
+             data-moon="{{ url_for('static', filename='icons/moon.svg') }}"
+             src="{{ url_for('static', filename='icons/sun.svg') }}"
+             alt="Theme icon" />
+      </button>
+
+      <button id="bg-toggle" class="theme-btn" aria-pressed="false" aria-label="Toggle background image">
+        <span class="sr-only">Toggle background image</span>
+      </button>
+    </nav>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="messages" aria-live="polite">
+          {% for category, msg in messages %}
+            <p class="{{ category }}">{{ msg }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='style.js') }}"></script>
+</body>
+</html>

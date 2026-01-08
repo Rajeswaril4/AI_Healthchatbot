@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}AI HealthBot - Home{% endblock %}
+
+{% block content %}
+  <h2>Select Your Symptoms</h2>
+  <input type="text" id="search" placeholder="Search symptoms..." autocomplete="off" />
+
+  <form action="{{ url_for('predict') }}" method="post" id="symptom-form" novalidate>
+    <!-- include CSRF token for safety (app sets cookie too) -->
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div id="symptom-grid" aria-label="Symptoms">
+      {% for symptom in symptoms %}
+        <div
+          class="symptom-card"
+          data-symptom="{{ symptom }}"
+          role="button"
+          tabindex="0"
+          aria-pressed="false"
+          aria-label="{{ symptom.replace('_', ' ') | title }}">
+          <span class="symptom-label">{{ symptom.replace('_', ' ') | title }}</span>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div id="hidden-inputs" aria-hidden="true"></div>
+
+    <div class="form-row" style="margin-top:18px;">
+      <button type="submit" class="predict-btn">Predict Disease</button>
+    </div>
+  </form>
+{% endblock %}

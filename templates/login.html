@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Login | AI HealthBot{% endblock %}
+
+{% block content %}
+  <h2 style="text-align:center;">Login</h2>
+
+  <form method="POST" action="{{ url_for('login') }}" class="auth-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input id="username" name="username" type="text" placeholder="Username or Email" required autocomplete="username" />
+    <input id="password" name="password" type="password" placeholder="Password" required autocomplete="current-password" />
+
+    <div class="auth-actions">
+      <button type="submit" class="predict-btn">Login</button>
+      <a href="{{ url_for('register') }}" class="btn btn-outline">Register</a>
+    </div>
+  </form>
+
+  <div class="social-auth-divider">
+    <span>OR</span>
+  </div>
+
+  <div class="social-auth-container">
+    <a href="{{ url_for('google_login') }}" class="social-auth-btn google-btn">
+      <i class="fab fa-google"></i> Sign in with Google
+    </a>
+  </div>
+{% endblock %}

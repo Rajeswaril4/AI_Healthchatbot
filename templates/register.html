@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Register | AI HealthBot{% endblock %}
+
+{% block content %}
+  <h2 style="text-align:center;">Create an account</h2>
+
+  <form method="POST" action="{{ url_for('register') }}" class="auth-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input id="username" name="username" placeholder="Username (Optional)" autocomplete="username" />
+    <input id="email" name="email" type="email" placeholder="Email Address" required autocomplete="email" />
+    <input id="password" name="password" type="password" placeholder="Password" required autocomplete="new-password" />
+    <input id="confirm_password" name="confirm_password" type="password" placeholder="Confirm password" required autocomplete="new-password" />
+
+    <div class="auth-actions">
+      <button type="submit" class="predict-btn">Register</button>
+      <a href="{{ url_for('login') }}" class="btn btn-outline">Login</a>
+    </div>
+  </form>
+{% endblock %}

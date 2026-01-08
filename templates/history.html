@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}History | AI HealthBot{% endblock %}
+
+{% block content %}
+  <h2 style="text-align:center;">Your Prediction History</h2>
+
+  <p class="top-links" style="text-align:center;">
+    <a href="{{ url_for('index') }}">Back to symptoms</a> •
+    <a href="{{ url_for('logout') }}">Logout</a>
+  </p>
+
+  {% if rows %}
+    <div style="overflow-x:auto;">
+      <table class="history-table" role="table" aria-label="Prediction history">
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Disease</th>
+            <th scope="col">Confidence</th>
+            <th scope="col">Symptoms</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td>{{ r.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+            <td class="disease-cell">{{ r.disease }}</td>
+            <td>
+              <span class="confidence-badge">
+                {{ "%.0f%%"|format(r.confidence*100 if r.confidence<=1 else r.confidence) }}
+              </span>
+            </td>
+            <td class="symptoms-cell">{{ r.selected_symptoms | join(", ") }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="no-data">
+      <p>No history yet.</p>
+    </div>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,16 @@
+# Frontend
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.env
+
+# Backend
+.env
+env/
+venv/
+__pycache__/
+*.pyc
+
+# Misc
+.vite/
+src.zip
