@@ -14,6 +14,21 @@ export const api = axios.create({
   },
 });
 
+// Track if we're currently refreshing to avoid multiple refresh calls
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
@@ -33,50 +48,97 @@ api.interceptors.request.use(
 );
 
 // Response interceptor to handle token refresh
-// In AuthContext.jsx - Update the api interceptor response handler (around line 37)
-
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    if (!originalRequest) return Promise.reject(error);
+    
+    if (!originalRequest) {
+      return Promise.reject(error);
+    }
 
     const status = error.response?.status;
 
     // If error is 401 or 422 (JWT validation failed) and we haven't retried yet
     if ((status === 401 || status === 422) && !originalRequest._retry) {
-        originalRequest._retry = true;
-
-        try {
-          const refreshToken = localStorage.getItem('refresh_token');
-          if (refreshToken) {
-            console.log('🔄 Attempting token refresh...');
-            const response = await axios.post(
-              `${API_URL}/refresh`,
-              {},
-              { headers: { Authorization: `Bearer ${refreshToken}` } }
-            );
-
-            const { access_token } = response.data;
-            localStorage.setItem('access_token', access_token);
-            console.log('✅ Token refreshed successfully');
-
-            originalRequest.headers.Authorization = `Bearer ${access_token}`;
+      if (isRefreshing) {
+        // If already refreshing, queue this request
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        })
+          .then(token => {
+            originalRequest.headers.Authorization = `Bearer ${token}`;
             return api(originalRequest);
-          }
-        } catch (refreshError) {
-          console.error('❌ Token refresh failed:', refreshError);
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          localStorage.removeItem('user');
-          window.location.href = '/login';
-          return Promise.reject(refreshError);
-        }
+          })
+          .catch(err => Promise.reject(err));
       }
+
+      originalRequest._retry = true;
+      isRefreshing = true;
+
+      const refreshToken = localStorage.getItem('refresh_token');
+      
+      if (!refreshToken) {
+        console.log('🚪 No refresh token available, redirecting to login');
+        localStorage.clear();
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
+
+      try {
+        console.log('🔄 Attempting token refresh...');
+        const response = await axios.post(
+          `${API_URL}/refresh`,
+          {},
+          { 
+            headers: { 
+              Authorization: `Bearer ${refreshToken}`,
+              'Content-Type': 'application/json'
+            } 
+          }
+        );
+
+        const { access_token } = response.data;
+        
+        if (!access_token) {
+          throw new Error('No access token in refresh response');
+        }
+
+        localStorage.setItem('access_token', access_token);
+        console.log('✅ Token refreshed successfully');
+
+        // Update the authorization header
+        api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+        originalRequest.headers.Authorization = `Bearer ${access_token}`;
+
+        // Process queued requests
+        processQueue(null, access_token);
+        isRefreshing = false;
+
+        return api(originalRequest);
+      } catch (refreshError) {
+        console.error('❌ Token refresh failed:', refreshError);
+        processQueue(refreshError, null);
+        isRefreshing = false;
+        
+        // Clear all tokens and redirect to login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        
+        // Only redirect if not already on login page
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+        
+        return Promise.reject(refreshError);
+      }
+    }
 
     return Promise.reject(error);
   }
 );
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -105,15 +167,26 @@ export const AuthProvider = ({ children }) => {
         // Then verify with backend
         const response = await api.get('/user');
         setUser(response.data.user);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
         console.log('✅ User verified with backend:', response.data.user);
         
       } catch (error) {
         console.error('❌ Auth check failed:', error.response?.status, error.message);
         
-        // Only logout if it's a real auth failure, not a network error
-        if (error.response?.status === 401 || error.response?.status === 404) {
-          console.log('🚪 Invalid session, logging out...');
+        // Only logout if it's a real auth failure (404 means user doesn't exist)
+        if (error.response?.status === 404) {
+          console.log('🚪 User not found, logging out...');
           logout();
+        } else if (error.response?.status === 401 || error.response?.status === 422) {
+          // Token issues - the interceptor should handle refresh
+          // If we're here, refresh failed, so keep cached user for now
+          console.log('⚠️ Token issue, keeping cached user');
+          try {
+            const userData = JSON.parse(savedUser);
+            setUser(userData);
+          } catch (e) {
+            logout();
+          }
         } else {
           // For network errors, keep the user from localStorage
           console.log('⚠️ Network error, keeping cached user');
@@ -142,6 +215,9 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('refresh_token', refresh_token);
       localStorage.setItem('user', JSON.stringify(user));
 
+      // Update axios default header
+      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+
       setUser(user);
       console.log('✅ Login successful:', user);
       
@@ -155,13 +231,16 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     try {
-      console.log('📝 Attempting registration...');
+      console.log('🔐 Attempting registration...');
       const response = await api.post('/register', userData);
       const { access_token, refresh_token, user } = response.data;
 
       localStorage.setItem('access_token', access_token);
       localStorage.setItem('refresh_token', refresh_token);
       localStorage.setItem('user', JSON.stringify(user));
+
+      // Update axios default header
+      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
 
       setUser(user);
       console.log('✅ Registration successful:', user);
@@ -192,6 +271,9 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('refresh_token', refresh_token);
       localStorage.setItem('user', JSON.stringify(user));
 
+      // Update axios default header
+      api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+
       setUser(user);
       console.log('✅ Google login successful:', user);
       
@@ -208,6 +290,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user');
+    delete api.defaults.headers.common['Authorization'];
     setUser(null);
   };
 

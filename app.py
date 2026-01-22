@@ -6,11 +6,13 @@ from datetime import datetime, timedelta
 import re
 import requests
 from math import radians, sin, cos, asin, sqrt
-from functools import wraps
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 import pandas as pd
 import numpy as np
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
@@ -21,6 +23,9 @@ from flask_jwt_extended import (
     JWTManager, create_access_token, create_refresh_token,
     jwt_required, get_jwt_identity, get_jwt
 )
+
+# Google OAuth
+from authlib.integrations.flask_client import OAuth
 
 # Requests retry helpers
 from requests.adapters import HTTPAdapter
@@ -35,8 +40,25 @@ USE_GEMINI = bool(GEMINI_API_KEY)
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-change-me")
 app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", app.config["SECRET_KEY"])
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)
+
+# JWT Configuration
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=24)
 app.config["JWT_REFRESH_TOKEN_EXPIRES"] = timedelta(days=30)
+app.config["JWT_TOKEN_LOCATION"] = ["headers"]
+app.config["JWT_HEADER_NAME"] = "Authorization"
+app.config["JWT_HEADER_TYPE"] = "Bearer"
+
+# Google OAuth Configuration
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_DISCOVERY_URL = "https://accounts.google.com/.well-known/openid-configuration"
+
+# Email Configuration
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USERNAME)
 
 BASE_DIR = Path(__file__).parent
 
@@ -53,8 +75,48 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 # Extensions
 db = SQLAlchemy(app)
 jwt = JWTManager(app)
+oauth = OAuth(app)
 
-# CORS configuration for React frontend
+# Configure Google OAuth
+if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+    google = oauth.register(
+        name='google',
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        server_metadata_url=GOOGLE_DISCOVERY_URL,
+        client_kwargs={
+            'scope': 'openid email profile'
+        }
+    )
+else:
+    google = None
+    print("⚠️ Google OAuth not configured - GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET missing")
+
+# JWT error handlers
+@jwt.unauthorized_loader
+def _missing_token(err):
+    print(f"🚨 Unauthorized: {err}")
+    return jsonify({"ok": False, "error": "Missing or invalid access token"}), 401
+
+@jwt.invalid_token_loader
+def _invalid_token(err):
+    print(f"🚨 Invalid token: {err}")
+    return jsonify({"ok": False, "error": "Invalid token format"}), 401
+
+@jwt.expired_token_loader
+def _expired_token(jwt_header, jwt_payload):
+    print("🚨 Token expired")
+    return jsonify({"ok": False, "error": "Token expired. Please refresh."}), 401
+
+# Request logging
+@app.before_request
+def log_request_info():
+    if request.path.startswith('/api/'):
+        auth = request.headers.get('Authorization', 'None')
+        print(f"\n📨 {request.method} {request.path}")
+        print(f"   Authorization: {auth[:40]}..." if len(auth) > 40 else f"   Authorization: {auth}")
+
+# CORS configuration
 CORS(app, 
      supports_credentials=True,
      origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", 
@@ -62,14 +124,14 @@ CORS(app,
      allow_headers=["Content-Type", "Authorization"],
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
-# --- Paths ---
+# Paths
 ARTIFACTS_DIR = BASE_DIR / "artifacts"
 MODEL_PATH = ARTIFACTS_DIR / "model.pkl"
 SYMPTOM_COLUMNS_PATH = ARTIFACTS_DIR / "symptom_columns.json"
 DISEASE_INFO_PATH = ARTIFACTS_DIR / "disease_info.json"
 DATA_PATH = BASE_DIR / "data" / "merged_dataset.csv"
 
-# --- DB Models ---
+# DB Models
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=True)
@@ -99,7 +161,7 @@ class Prediction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=True)
     disease = db.Column(db.String(256))
-    specialist = db.Column(db.String(256))  # Added specialist field
+    specialist = db.Column(db.String(256))
     confidence = db.Column(db.Float)
     selected_symptoms = db.Column(db.Text)
     description = db.Column(db.Text)
@@ -109,7 +171,139 @@ class Prediction(db.Model):
 with app.app_context():
     db.create_all()
 
-# --- Load Artifacts ---
+# Email Helper Function
+def send_welcome_email(user_email: str, username: str = None):
+    """Send welcome email to newly registered users"""
+    try:
+        if not SMTP_USERNAME or not SMTP_PASSWORD:
+            print("⚠️ SMTP credentials not configured, skipping email")
+            return False
+        
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = '🎉 Welcome to AI HealthBot!'
+        msg['From'] = FROM_EMAIL
+        msg['To'] = user_email
+        
+        # Email body
+        display_name = username if username else user_email.split('@')[0]
+        
+        text_content = f"""
+Welcome to AI HealthBot!
+
+Hi {display_name},
+
+Thank you for registering with AI HealthBot! 🏥
+
+We're excited to have you on board. With AI HealthBot, you can:
+✓ Get AI-powered disease predictions based on your symptoms
+✓ Receive specialist recommendations
+✓ Track your prediction history
+✓ Find nearby healthcare facilities
+
+Start by selecting your symptoms and let our AI help you understand your health better.
+
+Remember: AI HealthBot is a helpful tool, but always consult with healthcare professionals for medical advice.
+
+Stay healthy!
+The AI HealthBot Team
+        """
+        
+        html_content = f"""
+<html>
+  <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0;">
+    <div style="max-width: 600px; margin: 0 auto; padding: 0;">
+      <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center; border-radius: 0;">
+        <h1 style="color: white; margin: 0; font-size: 32px;">🏥 AI HealthBot</h1>
+        <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">Your Personal Health Assistant</p>
+      </div>
+      
+      <div style="background: #ffffff; padding: 40px 30px;">
+        <h2 style="color: #667eea; margin-top: 0; font-size: 24px;">Welcome aboard, {display_name}! 🎉</h2>
+        
+        <p style="font-size: 16px; color: #333; line-height: 1.8;">
+          Thank you for registering with <strong>AI HealthBot</strong>! We're thrilled to have you join our community.
+        </p>
+        
+        <div style="background: #f8f9fa; padding: 25px; border-radius: 8px; margin: 25px 0;">
+          <h3 style="color: #667eea; margin-top: 0; font-size: 18px;">What you can do with AI HealthBot:</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; font-size: 15px;">✅ Get AI-powered disease predictions based on your symptoms</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; font-size: 15px;">✅ Receive personalized specialist recommendations</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; font-size: 15px;">✅ Track your complete prediction history</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; font-size: 15px;">✅ Find nearby healthcare facilities on the map</td>
+            </tr>
+          </table>
+        </div>
+        
+        <div style="text-align: center; margin: 35px 0;">
+          <a href="http://localhost:5173" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 40px; text-decoration: none; border-radius: 30px; display: inline-block; font-weight: bold; font-size: 16px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+            Get Started Now →
+          </a>
+        </div>
+        
+        <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; margin-top: 30px; border-radius: 4px;">
+          <p style="margin: 0; font-size: 14px; color: #856404;">
+            <strong>⚠️ Important Reminder:</strong><br>
+            AI HealthBot is a helpful diagnostic tool designed to provide health insights. However, it should not replace professional medical advice. Always consult with qualified healthcare professionals for accurate diagnosis and treatment.
+          </p>
+        </div>
+        
+        <div style="margin-top: 40px; padding-top: 30px; border-top: 1px solid #e9ecef; text-align: center;">
+          <p style="color: #6c757d; font-size: 14px; margin: 5px 0;">
+            Need help? Reply to this email or visit our support page.
+          </p>
+          <p style="color: #6c757d; font-size: 14px; margin: 5px 0;">
+            Stay healthy! 💚
+          </p>
+          <p style="color: #667eea; font-weight: bold; font-size: 15px; margin: 15px 0 0 0;">
+            The AI HealthBot Team
+          </p>
+        </div>
+      </div>
+      
+      <div style="background: #f8f9fa; padding: 20px 30px; text-align: center; border-radius: 0;">
+        <p style="color: #6c757d; font-size: 12px; margin: 5px 0;">
+          © 2024 AI HealthBot. All rights reserved.
+        </p>
+        <p style="color: #6c757d; font-size: 12px; margin: 5px 0;">
+          This email was sent because you registered for an AI HealthBot account.
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
+        """
+        
+        # Attach both plain text and HTML versions
+        part1 = MIMEText(text_content, 'plain')
+        part2 = MIMEText(html_content, 'html')
+        msg.attach(part1)
+        msg.attach(part2)
+        
+        # Send email
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(msg)
+        
+        print(f"✅ Welcome email sent to {user_email}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Failed to send email to {user_email}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# Load Artifacts
 model = None
 symptom_columns = []
 disease_info = {}
@@ -168,7 +362,7 @@ if not disease_info:
 if model is None:
     model = DummyModel(classes=["Common Cold", "Flu", "Allergy"])
 
-# --- Disease Specialist Mapping ---
+# Disease Specialist Mapping
 DISEASE_TO_SPECIALIST = {
     "heart attack": "Cardiologist",
     "myocardial infarction": "Cardiologist",
@@ -208,7 +402,7 @@ def get_specialist_local(disease_name: str) -> str:
     
     return default
 
-# --- API Routes ---
+# ==================== API ROUTES ====================
 
 @app.route('/api/health', methods=['GET'])
 def health():
@@ -236,10 +430,16 @@ def register():
         db.session.add(user)
         db.session.commit()
         
-        print(f"✓ User registered: id={user.id}, email={user.email}")
+        print(f"✅ User registered: id={user.id}, email={user.email}")
         
-        access_token = create_access_token(identity=user.id)
-        refresh_token = create_refresh_token(identity=user.id)
+        # Send welcome email (non-blocking)
+        try:
+            send_welcome_email(user.email, user.username)
+        except Exception as email_error:
+            print(f"⚠️ Email sending failed but registration successful: {email_error}")
+        
+        access_token = create_access_token(identity=str(user.id))
+        refresh_token = create_refresh_token(identity=str(user.id))
         
         return jsonify({
             "access_token": access_token,
@@ -249,6 +449,8 @@ def register():
         
     except Exception as e:
         print("Register error:", e)
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": "Registration failed"}), 500
 
 @app.route('/api/login', methods=['POST'])
@@ -268,10 +470,10 @@ def login():
         if not user or not user.check_password(password):
             return jsonify({"error": "Invalid credentials"}), 401
         
-        print(f"✓ User logged in: id={user.id}, email={user.email}")
+        print(f"✅ User logged in: id={user.id}, email={user.email}")
         
-        access_token = create_access_token(identity=user.id)
-        refresh_token = create_refresh_token(identity=user.id)
+        access_token = create_access_token(identity=str(user.id))
+        refresh_token = create_refresh_token(identity=str(user.id))
         
         return jsonify({
             "access_token": access_token,
@@ -281,25 +483,149 @@ def login():
         
     except Exception as e:
         print("Login error:", e)
+        import traceback
+        traceback.print_exc()
         return jsonify({"error": "Login failed"}), 500
+
+# ==================== GOOGLE OAUTH ROUTES ====================
+
+@app.route('/api/auth/google', methods=['GET'])
+def google_login():
+    """Initiate Google OAuth flow"""
+    try:
+        if not google:
+            return jsonify({"error": "Google OAuth not configured"}), 500
+            
+        redirect_uri = request.args.get('redirect_uri', 'http://localhost:5173/auth/google/callback')
+        print(f"🔐 Google OAuth initiated with redirect_uri: {redirect_uri}")
+        
+        return google.authorize_redirect(redirect_uri)
+        
+    except Exception as e:
+        print(f"❌ Google OAuth initiation error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Failed to initiate Google login"}), 500
+
+@app.route('/api/auth/google/callback', methods=['GET'])
+def google_callback():
+    """Handle Google OAuth callback"""
+    try:
+        if not google:
+            return redirect(f"http://localhost:5173/login?error=Google OAuth not configured")
+            
+        # Get the authorization token
+        token = google.authorize_access_token()
+        
+        # Get user info from Google
+        resp = google.get('https://www.googleapis.com/oauth2/v2/userinfo')
+        user_info = resp.json()
+        
+        print(f"📧 Google user info: {user_info}")
+        
+        google_id = user_info.get('id')
+        email = user_info.get('email')
+        name = user_info.get('name', '').split()[0] if user_info.get('name') else None
+        
+        if not google_id or not email:
+            return redirect(f"http://localhost:5173/login?error=Invalid Google response")
+        
+        # Check if user exists with this Google ID
+        user = User.query.filter_by(google_id=google_id).first()
+        is_new_user = False
+        
+        if not user:
+            # Check if user exists with this email
+            user = User.query.filter_by(email=email).first()
+            
+            if user:
+                # Link Google account to existing user
+                user.google_id = google_id
+                db.session.commit()
+                print(f"🔗 Linked Google account to existing user: {user.email}")
+            else:
+                # Create new user
+                user = User(
+                    email=email,
+                    username=name,
+                    google_id=google_id
+                )
+                db.session.add(user)
+                db.session.commit()
+                is_new_user = True
+                print(f"✅ New user created via Google: {user.email}")
+                
+                # Send welcome email to new users
+                try:
+                    send_welcome_email(user.email, user.username)
+                except Exception as email_error:
+                    print(f"⚠️ Email sending failed: {email_error}")
+        
+        # Create tokens
+        access_token = create_access_token(identity=str(user.id))
+        refresh_token = create_refresh_token(identity=str(user.id))
+        
+        # Redirect back to frontend with token
+        redirect_url = f"http://localhost:5173/auth/google/callback?token={access_token}"
+        
+        return redirect(redirect_url)
+        
+    except Exception as e:
+        print(f"❌ Google OAuth callback error: {e}")
+        import traceback
+        traceback.print_exc()
+        return redirect(f"http://localhost:5173/login?error=Google authentication failed")
 
 @app.route('/api/refresh', methods=['POST'])
 @jwt_required(refresh=True)
 def refresh():
-    identity = get_jwt_identity()
-    access_token = create_access_token(identity=identity)
-    return jsonify({"access_token": access_token})
+    try:
+        identity_str = get_jwt_identity()
+        user_id = int(identity_str)
+        
+        print(f"🔄 Refreshing token for user_id: {user_id}")
+        
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        access_token = create_access_token(identity=str(user_id))
+        
+        print(f"✅ Token refreshed for user_id: {user_id}")
+        
+        return jsonify({
+            "access_token": access_token,
+            "user": user.to_dict()
+        }), 200
+        
+    except ValueError as ve:
+        print(f"❌ Invalid user_id format: {ve}")
+        return jsonify({"error": "Invalid token identity"}), 401
+    except Exception as e:
+        print(f"❌ Refresh error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Token refresh failed"}), 401
 
 @app.route('/api/user', methods=['GET'])
 @jwt_required()
 def get_current_user():
-    user_id = get_jwt_identity()
-    user = User.query.get(user_id)
-    
-    if not user:
-        return jsonify({"error": "User not found"}), 404
-    
-    return jsonify({"user": user.to_dict()})
+    try:
+        identity_str = get_jwt_identity()
+        user_id = int(identity_str)
+        
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        return jsonify({"user": user.to_dict()})
+        
+    except ValueError:
+        return jsonify({"error": "Invalid token identity"}), 401
+    except Exception as e:
+        print(f"Error in get_current_user: {e}")
+        return jsonify({"error": "Failed to get user"}), 500
 
 @app.route('/api/symptoms', methods=['GET'])
 def get_symptoms():
@@ -308,18 +634,12 @@ def get_symptoms():
 @app.route('/api/history', methods=['GET'])
 @jwt_required()
 def get_history():
-    """Get prediction history for the current user"""
     try:
-        # Get user_id from JWT token using flask-jwt-extended
-        user_id = get_jwt_identity()
+        identity_str = get_jwt_identity()
+        user_id = int(identity_str)
         
         print(f"📋 History request from user_id: {user_id}")
         
-        if not user_id:
-            print("❌ No user_id in JWT token")
-            return jsonify({'error': 'Unauthorized'}), 401
-
-        # Query predictions for this user
         records = (
             Prediction.query
             .filter_by(user_id=user_id)
@@ -329,11 +649,9 @@ def get_history():
         
         print(f"✅ Found {len(records)} predictions for user {user_id}")
 
-        # Build response payload
         history_payload = []
         for rec in records:
             try:
-                # Parse symptoms JSON
                 symptoms = json.loads(rec.selected_symptoms or "[]")
             except Exception as e:
                 print(f"⚠️ Error parsing symptoms for record {rec.id}: {e}")
@@ -355,13 +673,101 @@ def get_history():
             'count': len(history_payload)
         }), 200
         
+    except ValueError as ve:
+        print(f"❌ Invalid user_id format: {ve}")
+        return jsonify({'error': 'Invalid token identity'}), 401
     except Exception as e:
         print(f'❌ History fetch error: {e}')
         import traceback
         traceback.print_exc()
         return jsonify({'error': 'Failed to fetch history', 'details': str(e)}), 500
 
-# Debug endpoint to check database
+@app.route('/api/predict', methods=['POST'])
+@jwt_required()
+def predict():
+    try:
+        identity_str = get_jwt_identity()
+        user_id = int(identity_str)
+        
+        print(f"🔍 Prediction from user_id: {user_id}")
+        
+        data = request.get_json() or {}
+        selected_symptoms = data.get('symptoms', [])
+        
+        if not selected_symptoms:
+            return jsonify({'ok': False, 'error': 'Please select at least one symptom'}), 400
+        
+        input_data = [1 if symptom in selected_symptoms else 0 for symptom in symptom_columns]
+        prediction = model.predict([input_data])[0]
+        disease_name = str(prediction).strip()
+        disease_norm = normalize_name(disease_name)
+        
+        confidence_value = 0.5
+        try:
+            if hasattr(model, "predict_proba"):
+                probs = model.predict_proba([input_data])[0]
+                classes = np.array(getattr(model, "classes_", []), dtype=object)
+                match_idx = np.where(classes == prediction)[0]
+                if match_idx.size == 0:
+                    match_idx = np.where(np.char.lower(classes.astype(str)) == disease_name.lower())[0]
+                if match_idx.size:
+                    confidence_value = float(probs[int(match_idx[0])])
+                else:
+                    confidence_value = float(probs.max())
+        except Exception as ce:
+            print("Confidence error:", ce)
+        
+        disease_details = None
+        for k, v in disease_info.items():
+            if normalize_name(k) == disease_norm or k.lower() == disease_name.lower():
+                disease_details = v
+                break
+        
+        description = disease_details.get("description", "No description available.") if disease_details else "No description available."
+        precautions = disease_details.get("precautions", []) if disease_details else []
+        
+        specialist = get_specialist_local(disease_name)
+        
+        try:
+            rec = Prediction(
+                user_id=user_id,
+                disease=disease_name,
+                specialist=specialist,
+                confidence=float(confidence_value),
+                selected_symptoms=json.dumps(selected_symptoms),
+                description=description
+            )
+            db.session.add(rec)
+            db.session.commit()
+            print(f"✅ Prediction saved (ID: {rec.id}, user_id: {user_id})")
+        except Exception as db_err:
+            print(f"❌ Failed to save prediction: {db_err}")
+            import traceback
+            traceback.print_exc()
+            db.session.rollback()
+            return jsonify({'ok': False, 'error': 'Failed to save prediction'}), 500
+        
+        return jsonify({
+            'ok': True,
+            'disease': disease_name,
+            'description': description,
+            'specialist': specialist,
+            'precautions': precautions,
+            'confidence': confidence_value,
+            'selected_symptoms': selected_symptoms,
+            'prediction_id': rec.id
+        })
+        
+    except ValueError as ve:
+        print(f"❌ Invalid user_id format: {ve}")
+        return jsonify({'ok': False, 'error': 'Invalid token identity'}), 401
+    except Exception as e:
+        print("❌ Prediction error:", e)
+        import traceback
+        traceback.print_exc()
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+# Debug endpoints
 @app.route('/api/debug/predictions', methods=['GET'])
 def debug_predictions():
     try:
@@ -378,100 +784,8 @@ def debug_predictions():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/predict', methods=['POST'])
-def predict():
-    try:
-        # Manually extract user_id from Authorization header if present
-        user_id = None
-        auth_header = request.headers.get('Authorization', '')
-        if auth_header and auth_header.startswith('Bearer '):
-            try:
-                from flask_jwt_extended import decode_token
-                token = auth_header.split(' ')[1]
-                decoded = decode_token(token)
-                user_id = decoded.get('sub')
-                print(f"🔐 Prediction request from user_id: {user_id}")
-            except Exception as jwt_err:
-                print(f"⚠ JWT decode warning (continuing as guest): {jwt_err}")
-        
-        data = request.get_json()
-        selected_symptoms = data.get('symptoms', [])
-        
-        if not selected_symptoms:
-            return jsonify({'ok': False, 'error': 'Please select at least one symptom'}), 400
-        
-        input_data = [1 if symptom in selected_symptoms else 0 for symptom in symptom_columns]
-        prediction = model.predict([input_data])[0]
-        disease_name = str(prediction).strip()
-        disease_norm = normalize_name(disease_name)
-        
-        # Calculate confidence
-        confidence_value = 0.5
-        try:
-            if hasattr(model, "predict_proba"):
-                probs = model.predict_proba([input_data])[0]
-                classes = np.array(getattr(model, "classes_", []), dtype=object)
-                match_idx = np.where(classes == prediction)[0]
-                if match_idx.size == 0:
-                    match_idx = np.where(np.char.lower(classes.astype(str)) == disease_name.lower())[0]
-                if match_idx.size:
-                    confidence_value = float(probs[int(match_idx[0])])
-                else:
-                    confidence_value = float(probs.max())
-        except Exception as ce:
-            print("Confidence error:", ce)
-        
-        # Get disease details
-        disease_details = None
-        for k, v in disease_info.items():
-            if normalize_name(k) == disease_norm or k.lower() == disease_name.lower():
-                disease_details = v
-                break
-        
-        description = disease_details.get("description", "No description available.") if disease_details else "No description available."
-        precautions = disease_details.get("precautions", []) if disease_details else []
-        
-        # Get specialist
-        specialist = get_specialist_local(disease_name)
-        
-        # Save prediction with user_id from JWT token
-        try:
-            rec = Prediction(
-                user_id=user_id,
-                disease=disease_name,
-                specialist=specialist,
-                confidence=float(confidence_value),
-                selected_symptoms=json.dumps(selected_symptoms),
-                description=description
-            )
-            db.session.add(rec)
-            db.session.commit()
-            print(f"✓ Prediction saved (ID: {rec.id}, user_id: {user_id})")
-        except Exception as db_err:
-            print(f"❌ Failed to save prediction: {db_err}")
-            db.session.rollback()
-        
-        return jsonify({
-            'ok': True,
-            'disease': disease_name,
-            'description': description,
-            'specialist': specialist,
-            'precautions': precautions,
-            'confidence': confidence_value,
-            'selected_symptoms': selected_symptoms
-        })
-        
-    except Exception as e:
-        print("❌ Prediction error:", e)
-        import traceback
-        traceback.print_exc()
-        return jsonify({'ok': False, 'error': str(e)}), 500
-# Add this to your app.py to debug
-# Run: curl http://localhost:5000/api/debug/check-history
-
 @app.route('/api/debug/check-history', methods=['GET'])
 def debug_check_history():
-    """Debug endpoint to check all predictions"""
     try:
         all_predictions = Prediction.query.all()
         
@@ -504,13 +818,13 @@ def debug_check_history():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
 @app.route('/api/debug/current-user', methods=['GET'])
 @jwt_required()
 def debug_current_user():
-    """Debug endpoint to check current user from JWT"""
     try:
-        user_id = get_jwt_identity()
+        identity_str = get_jwt_identity()
+        user_id = int(identity_str)
+        
         user = User.query.get(user_id)
         
         if not user:
@@ -522,9 +836,15 @@ def debug_current_user():
             'predictions_count': Prediction.query.filter_by(user_id=user_id).count()
         }), 200
         
+    except ValueError:
+        return jsonify({'error': 'Invalid token identity'}), 401
     except Exception as e:
+        print(f"Debug error: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-# --- Overpass API for Nearby Specialists ---
+
+# Overpass API for Nearby Specialists
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter",
