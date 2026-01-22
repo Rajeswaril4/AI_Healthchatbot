@@ -1,19 +1,8 @@
-import React from 'react';
-import { Navigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { Navigate } from "react-router-dom";
+import { tokenService } from "../utils/tokenService";
 
 const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="loading-container">
-        <div className="loading-spinner">Loading...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
+  if (!tokenService.isAuthenticated()) {
     return <Navigate to="/login" replace />;
   }
 

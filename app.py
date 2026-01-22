@@ -294,11 +294,11 @@ The AI HealthBot Team
             server.login(SMTP_USERNAME, SMTP_PASSWORD)
             server.send_message(msg)
         
-        print(f"✅ Welcome email sent to {user_email}")
+        print(f" Welcome email sent to {user_email}")
         return True
         
     except Exception as e:
-        print(f"❌ Failed to send email to {user_email}: {e}")
+        print(f" Failed to send email to {user_email}: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -430,13 +430,13 @@ def register():
         db.session.add(user)
         db.session.commit()
         
-        print(f"✅ User registered: id={user.id}, email={user.email}")
+        print(f" User registered: id={user.id}, email={user.email}")
         
         # Send welcome email (non-blocking)
         try:
             send_welcome_email(user.email, user.username)
         except Exception as email_error:
-            print(f"⚠️ Email sending failed but registration successful: {email_error}")
+            print(f" Email sending failed but registration successful: {email_error}")
         
         access_token = create_access_token(identity=str(user.id))
         refresh_token = create_refresh_token(identity=str(user.id))
@@ -470,7 +470,7 @@ def login():
         if not user or not user.check_password(password):
             return jsonify({"error": "Invalid credentials"}), 401
         
-        print(f"✅ User logged in: id={user.id}, email={user.email}")
+        print(f" User logged in: id={user.id}, email={user.email}")
         
         access_token = create_access_token(identity=str(user.id))
         refresh_token = create_refresh_token(identity=str(user.id))
@@ -497,12 +497,12 @@ def google_login():
             return jsonify({"error": "Google OAuth not configured"}), 500
             
         redirect_uri = request.args.get('redirect_uri', 'http://localhost:5173/auth/google/callback')
-        print(f"🔐 Google OAuth initiated with redirect_uri: {redirect_uri}")
+        print(f" Google OAuth initiated with redirect_uri: {redirect_uri}")
         
         return google.authorize_redirect(redirect_uri)
         
     except Exception as e:
-        print(f"❌ Google OAuth initiation error: {e}")
+        print(f" Google OAuth initiation error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": "Failed to initiate Google login"}), 500
@@ -542,7 +542,7 @@ def google_callback():
                 # Link Google account to existing user
                 user.google_id = google_id
                 db.session.commit()
-                print(f"🔗 Linked Google account to existing user: {user.email}")
+                print(f" Linked Google account to existing user: {user.email}")
             else:
                 # Create new user
                 user = User(
@@ -553,13 +553,13 @@ def google_callback():
                 db.session.add(user)
                 db.session.commit()
                 is_new_user = True
-                print(f"✅ New user created via Google: {user.email}")
+                print(f" New user created via Google: {user.email}")
                 
                 # Send welcome email to new users
                 try:
                     send_welcome_email(user.email, user.username)
                 except Exception as email_error:
-                    print(f"⚠️ Email sending failed: {email_error}")
+                    print(f" Email sending failed: {email_error}")
         
         # Create tokens
         access_token = create_access_token(identity=str(user.id))
@@ -571,10 +571,58 @@ def google_callback():
         return redirect(redirect_url)
         
     except Exception as e:
-        print(f"❌ Google OAuth callback error: {e}")
+        print(f" Google OAuth callback error: {e}")
         import traceback
         traceback.print_exc()
         return redirect(f"http://localhost:5173/login?error=Google authentication failed")
+@app.route('/api/auth/google/verify', methods=['POST'])
+def google_verify_token():
+    """Verify Google OAuth token and return user data"""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        
+        if not token:
+            return jsonify({"error": "Token required"}), 400
+        
+        print(f" Verifying Google OAuth token...")
+        
+        # Verify the token is valid by decoding our JWT
+        # The token passed here is already our JWT access_token from the redirect
+        try:
+            from flask_jwt_extended import decode_token
+            decoded = decode_token(token)
+            user_id = int(decoded['sub'])
+            
+            print(f" Token decoded successfully for user_id: {user_id}")
+            
+            user = User.query.get(user_id)
+            if not user:
+                print(f" User not found: {user_id}")
+                return jsonify({"error": "User not found"}), 404
+            
+            # Create fresh tokens
+            access_token = create_access_token(identity=str(user.id))
+            refresh_token = create_refresh_token(identity=str(user.id))
+            
+            print(f" Google verification successful for: {user.email}")
+            
+            return jsonify({
+                "success": True,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "user": user.to_dict()
+            }), 200
+            
+        except Exception as decode_error:
+            print(f" Token decode error: {decode_error}")
+            return jsonify({"error": "Invalid token"}), 401
+        
+    except Exception as e:
+        print(f" Google verify error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Verification failed"}), 500
 
 @app.route('/api/refresh', methods=['POST'])
 @jwt_required(refresh=True)

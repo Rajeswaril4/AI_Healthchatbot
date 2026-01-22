@@ -39,7 +39,9 @@ function AppContent() {
                 </ProtectedRoute>
               } 
             />
+            {/* Only ONE Google callback route - removed duplicate */}
             <Route path="/auth/google/callback" element={<GoogleCallback />} />
+
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

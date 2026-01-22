@@ -35,7 +35,7 @@ api.interceptors.request.use(
     const token = localStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('🔑 Request with token:', token.substring(0, 20) + '...');
+      console.log('🔒 Request with token:', token.substring(0, 20) + '...');
     } else {
       console.log('⚠️ No token found in request');
     }
@@ -260,9 +260,11 @@ export const AuthProvider = ({ children }) => {
 
   const handleGoogleCallback = async (token) => {
     try {
-      console.log('🔐 Processing Google OAuth callback...');
-      const response = await api.get('/auth/google/callback', {
-        headers: { Authorization: `Bearer ${token}` },
+      console.log('🔐 Processing Google OAuth token...');
+      
+      // Call the new verify endpoint
+      const response = await api.post('/auth/google/verify', {
+        token: token
       });
 
       const { access_token, refresh_token, user } = response.data;
