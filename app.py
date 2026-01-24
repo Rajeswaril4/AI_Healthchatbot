@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-
+from functools import wraps
 # JWT imports
 from flask_jwt_extended import (
     JWTManager, create_access_token, create_refresh_token,
@@ -138,6 +138,9 @@ class User(db.Model):
     email = db.Column(db.String(150), unique=True, nullable=False)
     google_id = db.Column(db.String(255), unique=True, nullable=True)
     password_hash = db.Column(db.String(255), nullable=True)
+    role = db.Column(db.String(50), default='user', nullable=False)  # NEW: 'user' or 'admin'
+    is_active = db.Column(db.Boolean, default=True, nullable=False)  # NEW: Can deactivate users
+    last_login = db.Column(db.DateTime, nullable=True)  # NEW: Track last login
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password: str):
@@ -147,14 +150,69 @@ class User(db.Model):
         if self.password_hash:
             return check_password_hash(self.password_hash, password)
         return False
+    
+    def is_admin(self) -> bool:
+        return self.role == 'admin'
 
     def to_dict(self):
         return {
             'id': self.id,
             'username': self.username,
             'email': self.email,
+            'role': self.role,
+            'is_active': self.is_active,
+            'last_login': self.last_login.isoformat() if self.last_login else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+    
+    def to_admin_dict(self):
+        """Extended info for admin view"""
+        return {
+            'id': self.id,
+            'username': self.username,
+            'email': self.email,
+            'role': self.role,
+            'is_active': self.is_active,
+            'google_id': self.google_id,
+            'has_password': bool(self.password_hash),
+            'last_login': self.last_login.isoformat() if self.last_login else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'prediction_count': Prediction.query.filter_by(user_id=self.id).count()
+        }
+def create_default_admin():
+    admin_email = os.getenv("ADMIN_EMAIL")
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    admin_username = os.getenv("ADMIN_USERNAME", "admin")
+
+    if not admin_email or not admin_password:
+        print("⚠️ ADMIN_EMAIL or ADMIN_PASSWORD not set. Skipping admin creation.")
+        return
+
+    admin = User.query.filter_by(email=admin_email).first()
+
+    if admin:
+        # Ensure role is admin
+        if admin.role != "admin":
+            admin.role = "admin"
+            db.session.commit()
+            print(f"✅ Existing user promoted to admin: {admin_email}")
+        else:
+            print("ℹ️ Admin already exists.")
+        return
+
+    # Create new admin
+    admin = User(
+        email=admin_email,
+        username=admin_username,
+        role="admin",
+        is_active=True
+    )
+    admin.set_password(admin_password)
+
+    db.session.add(admin)
+    db.session.commit()
+
+    print(f"✅ Default admin created: {admin_email}")
 
 
 class Prediction(db.Model):
@@ -166,11 +224,144 @@ class Prediction(db.Model):
     selected_symptoms = db.Column(db.Text)
     description = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationship to user
+    user = db.relationship('User', backref=db.backref('predictions', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'disease': self.disease,
+            'specialist': self.specialist,
+            'confidence': self.confidence,
+            'selected_symptoms': json.loads(self.selected_symptoms or "[]"),
+            'description': self.description,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+    
+    def to_admin_dict(self):
+        """Extended info for admin view with user details"""
+        user_info = None
+        if self.user:
+            user_info = {
+                'id': self.user.id,
+                'email': self.user.email,
+                'username': self.user.username
+            }
+        
+        return {
+            'id': self.id,
+            'user_id': self.user_id,
+            'user': user_info,
+            'disease': self.disease,
+            'specialist': self.specialist,
+            'confidence': self.confidence,
+            'selected_symptoms': json.loads(self.selected_symptoms or "[]"),
+            'description': self.description,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
 
 
-with app.app_context():
-    db.create_all()
+# Add this NEW model for admin activity logs
+class AdminLog(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    admin_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    action = db.Column(db.String(255), nullable=False)  # e.g., "deleted_user", "updated_role"
+    target_type = db.Column(db.String(50), nullable=True)  # e.g., "user", "prediction"
+    target_id = db.Column(db.Integer, nullable=True)
+    details = db.Column(db.Text, nullable=True)  # JSON string with additional details
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    admin = db.relationship('User', backref=db.backref('admin_logs', lazy=True))
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'admin_id': self.admin_id,
+            'admin_email': self.admin.email if self.admin else None,
+            'action': self.action,
+            'target_type': self.target_type,
+            'target_id': self.target_id,
+            'details': json.loads(self.details) if self.details else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
 
+
+# Helper function to log admin actions
+def log_admin_action(admin_id: int, action: str, target_type: str = None, 
+                     target_id: int = None, details: dict = None):
+    """Log admin actions for audit trail"""
+    try:
+        log = AdminLog(
+            admin_id=admin_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            details=json.dumps(details) if details else None
+        )
+        db.session.add(log)
+        db.session.commit()
+        print(f" Admin action logged: {action}")
+    except Exception as e:
+        print(f" Failed to log admin action: {e}")
+        db.session.rollback()
+def admin_required(fn):
+    """Decorator to require admin role for a route"""
+    @wraps(fn)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        try:
+            identity_str = get_jwt_identity()
+            user_id = int(identity_str)
+            
+            user = User.query.get(user_id)
+            
+            if not user:
+                return jsonify({"error": "User not found"}), 404
+            
+            if not user.is_admin():
+                print(f" Unauthorized admin access attempt by user {user_id}")
+                return jsonify({"error": "Admin access required"}), 403
+            
+            # Pass user to the route function
+            return fn(user, *args, **kwargs)
+            
+        except ValueError:
+            return jsonify({"error": "Invalid token"}), 401
+        except Exception as e:
+            print(f" Admin auth error: {e}")
+            return jsonify({"error": "Authorization failed"}), 500
+    
+    return wrapper
+
+
+def active_user_required(fn):
+    """Decorator to check if user account is active"""
+    @wraps(fn)
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        try:
+            identity_str = get_jwt_identity()
+            user_id = int(identity_str)
+            
+            user = User.query.get(user_id)
+            
+            if not user:
+                return jsonify({"error": "User not found"}), 404
+            
+            if not user.is_active:
+                return jsonify({"error": "Account is deactivated"}), 403
+            
+            return fn(*args, **kwargs)
+            
+        except ValueError:
+            return jsonify({"error": "Invalid token"}), 401
+        except Exception as e:
+            print(f" User auth error: {e}")
+            return jsonify({"error": "Authorization failed"}), 500
+    
+    return wrapper
 # Email Helper Function
 def send_welcome_email(user_email: str, username: str = None):
     """Send welcome email to newly registered users"""
@@ -969,7 +1160,383 @@ def _haversine_meters(lat1, lon1, lat2, lon2):
     a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
     c = 2 * asin(sqrt(a))
     return r * c
+# ==================== ADMIN ROUTES ====================
 
+@app.route('/api/admin/dashboard', methods=['GET'])
+@admin_required
+def admin_dashboard(admin_user):
+    """Get admin dashboard statistics"""
+    try:
+        total_users = User.query.count()
+        active_users = User.query.filter_by(is_active=True).count()
+        admin_users = User.query.filter_by(role='admin').count()
+        total_predictions = Prediction.query.count()
+        
+        # Recent registrations (last 30 days)
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        recent_registrations = User.query.filter(User.created_at >= thirty_days_ago).count()
+        
+        # Recent predictions (last 7 days)
+        seven_days_ago = datetime.utcnow() - timedelta(days=7)
+        recent_predictions = Prediction.query.filter(Prediction.created_at >= seven_days_ago).count()
+        
+        # Most common diseases
+        predictions = Prediction.query.all()
+        disease_counts = {}
+        for pred in predictions:
+            disease = pred.disease
+            disease_counts[disease] = disease_counts.get(disease, 0) + 1
+        
+        top_diseases = sorted(disease_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        
+        return jsonify({
+            "ok": True,
+            "stats": {
+                "total_users": total_users,
+                "active_users": active_users,
+                "admin_users": admin_users,
+                "total_predictions": total_predictions,
+                "recent_registrations": recent_registrations,
+                "recent_predictions": recent_predictions,
+                "top_diseases": [{"disease": d[0], "count": d[1]} for d in top_diseases]
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Admin dashboard error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Failed to load dashboard"}), 500
+
+
+@app.route('/api/admin/users', methods=['GET'])
+@admin_required
+def admin_get_users(admin_user):
+    """Get all users with pagination"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        search = request.args.get('search', '', type=str)
+        role_filter = request.args.get('role', None, type=str)
+        
+        query = User.query
+        
+        # Search filter
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                (User.email.like(search_pattern)) | 
+                (User.username.like(search_pattern))
+            )
+        
+        # Role filter
+        if role_filter:
+            query = query.filter_by(role=role_filter)
+        
+        # Order by created_at descending
+        query = query.order_by(User.created_at.desc())
+        
+        # Paginate
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        users = [user.to_admin_dict() for user in pagination.items]
+        
+        return jsonify({
+            "ok": True,
+            "users": users,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": pagination.total,
+                "pages": pagination.pages,
+                "has_next": pagination.has_next,
+                "has_prev": pagination.has_prev
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Admin get users error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch users"}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['GET'])
+@admin_required
+def admin_get_user(admin_user, user_id):
+    """Get detailed user information"""
+    try:
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        # Get user's predictions
+        predictions = Prediction.query.filter_by(user_id=user_id).order_by(
+            Prediction.created_at.desc()
+        ).limit(10).all()
+        
+        return jsonify({
+            "ok": True,
+            "user": user.to_admin_dict(),
+            "recent_predictions": [p.to_dict() for p in predictions]
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Admin get user error: {e}")
+        return jsonify({"error": "Failed to fetch user"}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>/role', methods=['PUT'])
+@admin_required
+def admin_update_user_role(admin_user, user_id):
+    """Update user role (admin/user)"""
+    try:
+        # Prevent self-demotion
+        if admin_user.id == user_id:
+            return jsonify({"error": "Cannot modify your own role"}), 400
+        
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        data = request.get_json()
+        new_role = data.get('role')
+        
+        if new_role not in ['user', 'admin']:
+            return jsonify({"error": "Invalid role. Must be 'user' or 'admin'"}), 400
+        
+        old_role = user.role
+        user.role = new_role
+        db.session.commit()
+        
+        # Log action
+        log_admin_action(
+            admin_id=admin_user.id,
+            action="updated_user_role",
+            target_type="user",
+            target_id=user_id,
+            details={"old_role": old_role, "new_role": new_role}
+        )
+        
+        print(f"✅ Admin {admin_user.id} changed user {user_id} role: {old_role} → {new_role}")
+        
+        return jsonify({
+            "ok": True,
+            "message": "User role updated",
+            "user": user.to_admin_dict()
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Admin update role error: {e}")
+        db.session.rollback()
+        return jsonify({"error": "Failed to update role"}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>/status', methods=['PUT'])
+@admin_required
+def admin_update_user_status(admin_user, user_id):
+    """Activate or deactivate user account"""
+    try:
+        # Prevent self-deactivation
+        if admin_user.id == user_id:
+            return jsonify({"error": "Cannot modify your own status"}), 400
+        
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        data = request.get_json()
+        is_active = data.get('is_active')
+        
+        if is_active is None:
+            return jsonify({"error": "is_active field is required"}), 400
+        
+        old_status = user.is_active
+        user.is_active = bool(is_active)
+        db.session.commit()
+        
+        # Log action
+        action = "activated_user" if is_active else "deactivated_user"
+        log_admin_action(
+            admin_id=admin_user.id,
+            action=action,
+            target_type="user",
+            target_id=user_id
+        )
+        
+        print(f"✅ Admin {admin_user.id} {'activated' if is_active else 'deactivated'} user {user_id}")
+        
+        return jsonify({
+            "ok": True,
+            "message": f"User {'activated' if is_active else 'deactivated'}",
+            "user": user.to_admin_dict()
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Admin update status error: {e}")
+        db.session.rollback()
+        return jsonify({"error": "Failed to update status"}), 500
+
+
+@app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
+@admin_required
+def admin_delete_user(admin_user, user_id):
+    """Delete a user and all their data"""
+    try:
+        # Prevent self-deletion
+        if admin_user.id == user_id:
+            return jsonify({"error": "Cannot delete your own account"}), 400
+        
+        user = User.query.get(user_id)
+        
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        
+        # Store user info for logging
+        user_email = user.email
+        
+        # Delete user's predictions
+        Prediction.query.filter_by(user_id=user_id).delete()
+        
+        # Delete user
+        db.session.delete(user)
+        db.session.commit()
+        
+        # Log action
+        log_admin_action(
+            admin_id=admin_user.id,
+            action="deleted_user",
+            target_type="user",
+            target_id=user_id,
+            details={"email": user_email}
+        )
+        
+        print(f"✅ Admin {admin_user.id} deleted user {user_id} ({user_email})")
+        
+        return jsonify({
+            "ok": True,
+            "message": "User deleted successfully"
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Admin delete user error: {e}")
+        db.session.rollback()
+        return jsonify({"error": "Failed to delete user"}), 500
+
+
+@app.route('/api/admin/predictions', methods=['GET'])
+@admin_required
+def admin_get_predictions(admin_user):
+    """Get all predictions with pagination"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        user_id_filter = request.args.get('user_id', None, type=int)
+        
+        query = Prediction.query
+        
+        # User filter
+        if user_id_filter:
+            query = query.filter_by(user_id=user_id_filter)
+        
+        # Order by created_at descending
+        query = query.order_by(Prediction.created_at.desc())
+        
+        # Paginate
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        predictions = [pred.to_admin_dict() for pred in pagination.items]
+        
+        return jsonify({
+            "ok": True,
+            "predictions": predictions,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": pagination.total,
+                "pages": pagination.pages,
+                "has_next": pagination.has_next,
+                "has_prev": pagination.has_prev
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Admin get predictions error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch predictions"}), 500
+
+
+@app.route('/api/admin/predictions/<int:prediction_id>', methods=['DELETE'])
+@admin_required
+def admin_delete_prediction(admin_user, prediction_id):
+    """Delete a specific prediction"""
+    try:
+        prediction = Prediction.query.get(prediction_id)
+        
+        if not prediction:
+            return jsonify({"error": "Prediction not found"}), 404
+        
+        # Store info for logging
+        user_id = prediction.user_id
+        disease = prediction.disease
+        
+        db.session.delete(prediction)
+        db.session.commit()
+        
+        # Log action
+        log_admin_action(
+            admin_id=admin_user.id,
+            action="deleted_prediction",
+            target_type="prediction",
+            target_id=prediction_id,
+            details={"user_id": user_id, "disease": disease}
+        )
+        
+        print(f"✅ Admin {admin_user.id} deleted prediction {prediction_id}")
+        
+        return jsonify({
+            "ok": True,
+            "message": "Prediction deleted successfully"
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Admin delete prediction error: {e}")
+        db.session.rollback()
+        return jsonify({"error": "Failed to delete prediction"}), 500
+
+
+@app.route('/api/admin/logs', methods=['GET'])
+@admin_required
+def admin_get_logs(admin_user):
+    """Get admin activity logs"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        
+        pagination = AdminLog.query.order_by(
+            AdminLog.created_at.desc()
+        ).paginate(page=page, per_page=per_page, error_out=False)
+        
+        logs = [log.to_dict() for log in pagination.items]
+        
+        return jsonify({
+            "ok": True,
+            "logs": logs,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": pagination.total,
+                "pages": pagination.pages
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"❌ Admin get logs error: {e}")
+        return jsonify({"error": "Failed to fetch logs"}), 500
 @app.route('/api/nearby', methods=['GET'])
 def nearby():
     try:
@@ -1032,7 +1599,11 @@ def nearby():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
+        create_default_admin()
+
     port = int(os.getenv("PORT", 5000))
     debug_flag = os.getenv("FLASK_ENV", "development") == "development"
     app.run(debug=debug_flag, port=port, host="0.0.0.0")

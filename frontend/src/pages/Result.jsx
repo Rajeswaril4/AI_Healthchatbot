@@ -1,318 +1,293 @@
-import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import '../styles/Result.css';
+import React, { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { GoogleMap, Marker, InfoWindow } from "@react-google-maps/api";
+import {
+  Stethoscope,
+  BarChart3,
+  AlertTriangle,
+  Printer,
+  History,
+  MapPin,
+  Navigation,
+  RefreshCcw
+} from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import "../styles/Result.css";
 
-// Fix Leaflet default marker icon issue
-import L from 'leaflet';
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
-});
+const mapContainerStyle = {
+  width: "100%",
+  height: "400px",
+  borderRadius: "12px"
+};
 
 const Result = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { api } = useAuth();
-  
+
   const [predictionData, setPredictionData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [nearbyPlaces, setNearbyPlaces] = useState([]);
-  const [showMap, setShowMap] = useState(false);
-  const [userLocation, setUserLocation] = useState(null);
-  const [loadingNearby, setLoadingNearby] = useState(false);
 
+  const [userLocation, setUserLocation] = useState(null);
+  const [nearbyPlaces, setNearbyPlaces] = useState([]);
+  const [activePlace, setActivePlace] = useState(null);
+
+  const [showMap, setShowMap] = useState(false);
+  const [loadingNearby, setLoadingNearby] = useState(false);
+  const [locationError, setLocationError] = useState("");
+
+  const [manualLocation, setManualLocation] = useState("");
+  const [manualLoading, setManualLoading] = useState(false);
+
+  /* ================= LOAD RESULT ================= */
   useEffect(() => {
     if (location.state?.prediction) {
       setPredictionData(location.state.prediction);
-      setLoading(false);
     } else if (location.state?.result) {
-      // Support both 'prediction' and 'result' keys for backwards compatibility
       setPredictionData(location.state.result);
-      setLoading(false);
     } else {
-      navigate('/', { replace: true });
+      navigate("/", { replace: true });
     }
+    setLoading(false);
   }, [location, navigate]);
 
-  const formatSymptomName = (symptom) => {
-    return symptom
-      .replace(/_/g, ' ')
-      .split(' ')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
+  const formatConfidence = (value) => {
+    if (!value) return null;
+    return (value <= 1 ? value * 100 : value).toFixed(1);
   };
 
-  const formatConfidence = (confidence) => {
-    if (!confidence) return null;
-    const value = confidence <= 1 ? confidence * 100 : confidence;
-    return value.toFixed(1);
-  };
-
+  /* ================= AUTO LOCATION ================= */
   const handleFindNearby = () => {
+    setLocationError("");
+    setLoadingNearby(true);
+
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser');
+      setLocationError("Geolocation is not supported by your browser.");
+      setLoadingNearby(false);
       return;
     }
 
-    setLoadingNearby(true);
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
+      async ({ coords }) => {
+        const { latitude, longitude } = coords;
         setUserLocation({ lat: latitude, lng: longitude });
-
-        try {
-          const specialist = predictionData?.specialist || 'hospital';
-          const response = await api.get('/nearby', {
-            params: {
-              lat: latitude,
-              lng: longitude,
-              radius: 5000,
-              specialist: specialist
-            }
-          });
-
-          if (response.data.ok) {
-            setNearbyPlaces(response.data.places || []);
-            setShowMap(true);
-          } else {
-            alert(response.data.error || 'Failed to find nearby specialists');
-          }
-        } catch (error) {
-          console.error('Error fetching nearby places:', error);
-          alert('Failed to find nearby specialists. Please try again.');
-        } finally {
-          setLoadingNearby(false);
-        }
+        await fetchNearby(latitude, longitude);
       },
       (error) => {
-        console.error('Geolocation error:', error);
-        alert('Unable to get your location. Please enable location services.');
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setLocationError(
+              "Location permission denied. Allow location access or enter your city/pincode below."
+            );
+            break;
+          case error.TIMEOUT:
+            setLocationError("Location request timed out.");
+            break;
+          default:
+            setLocationError("Unable to get your location.");
+        }
         setLoadingNearby(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  /* ================= MANUAL LOCATION ================= */
+  const handleManualLocationSearch = async () => {
+    if (!manualLocation.trim()) {
+      setLocationError("Please enter a city name or pincode.");
+      return;
+    }
+
+    setManualLoading(true);
+    setLocationError("");
+
+    try {
+      const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+        manualLocation
+      )}&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}`;
+
+      const geoRes = await fetch(geoUrl);
+      const geoData = await geoRes.json();
+
+      if (geoData.status !== "OK") {
+        setLocationError("Location not found. Try another city or pincode.");
+        setManualLoading(false);
+        return;
       }
-    );
+
+      const { lat, lng } = geoData.results[0].geometry.location;
+      setUserLocation({ lat, lng });
+      await fetchNearby(lat, lng);
+    } catch {
+      setLocationError("Failed to search location.");
+    } finally {
+      setManualLoading(false);
+    }
   };
 
-  const handlePrint = () => {
-    window.print();
+  /* ================= FETCH NEARBY ================= */
+  const fetchNearby = async (lat, lng) => {
+    try {
+      const specialist = predictionData?.specialist || "hospital";
+
+      const response = await api.get("/nearby", {
+        params: { lat, lng, radius: 5000, specialist }
+      });
+
+      if (response.data.ok) {
+        setNearbyPlaces(response.data.places || []);
+        setShowMap(true);
+      } else {
+        setLocationError("No nearby healthcare facilities found.");
+      }
+    } catch {
+      setLocationError("Failed to fetch nearby specialists.");
+    } finally {
+      setLoadingNearby(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="result-container">
-        <div className="loading-spinner">Loading results...</div>
-      </div>
-    );
+  if (loading || !predictionData) {
+    return <div className="loading-spinner">Loading results…</div>;
   }
 
-  if (!predictionData) {
-    return null;
-  }
-
-  const { 
-    disease, 
-    description, 
-    precautions, 
-    selected_symptoms,
+  const {
+    disease,
+    description,
+    precautions,
     specialist,
     confidence,
-    conf_num 
+    conf_num
   } = predictionData;
 
   const confidencePercent = formatConfidence(confidence || conf_num);
 
+  /* ================= RENDER ================= */
   return (
     <div className="result-container">
       <div className="result-card">
-        <h1 className="disease-name">{disease || 'Unknown'}</h1>
+        <h1 className="disease-name">{disease}</h1>
 
         <div className="meta-row">
           {specialist && (
             <div className="meta-item">
-              <div className="section-title">
-                <span>👨‍⚕️</span>
-                Recommended Specialist
-              </div>
-              <p className="specialist">{specialist}</p>
+              <Stethoscope size={18} /> {specialist}
             </div>
           )}
-
           {confidencePercent && (
             <div className="meta-item">
-              <div className="section-title">
-                <span>📊</span>
-                Confidence Level
-              </div>
-              <p className="confidence-text">{confidencePercent}%</p>
-              <div className="confidence-meter">
-                <div 
-                  className="confidence-fill" 
-                  style={{ width: `${confidencePercent}%` }}
-                />
-              </div>
+              <BarChart3 size={18} /> {confidencePercent}%
             </div>
           )}
         </div>
 
-        {selected_symptoms && selected_symptoms.length > 0 && (
-          <div className="section">
-            <h3 className="section-title">
-              <span>🔍</span>
-              Selected Symptoms
-            </h3>
-            <div className="selected-symptoms">
-              {selected_symptoms.map((symptom, index) => (
-                <span key={index} className="selected-symptom">
-                  {formatSymptomName(symptom)}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+        <p>{description}</p>
 
-        {description && (
-          <div className="section">
-            <h3 className="section-title">
-              <span>📋</span>
-              Description
-            </h3>
-            <p className="description">{description}</p>
-          </div>
+        {precautions?.length > 0 && (
+          <ul className="precautions">
+            {precautions.map((p, i) => (
+              <li key={i}>{p}</li>
+            ))}
+          </ul>
         )}
-
-        {precautions && precautions.length > 0 && (
-          <div className="section">
-            <h3 className="section-title">
-              <span>⚕️</span>
-              Recommended Precautions
-            </h3>
-            <ul className="precautions">
-              {precautions.map((precaution, index) => (
-                <li key={index}>{precaution}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <div className="section">
-          <p className="text-muted" style={{ fontSize: '0.9rem', fontStyle: 'italic' }}>
-            ⚠️ <strong>Disclaimer:</strong> This is an AI-based prediction and should not be considered 
-            as a professional medical diagnosis. Please consult with a healthcare professional for proper 
-            medical advice and treatment.
-          </p>
-        </div>
 
         <div className="actions">
-          <button 
-            className="btn btn-primary"
-            onClick={() => navigate('/')}
-          >
-            ← New Prediction
+          <button className="btn btn-primary" onClick={() => navigate("/")}>
+            New Prediction
           </button>
-          <button 
-            className="btn btn-outline"
-            onClick={() => navigate('/history')}
-          >
-            📜 View History
+          <button className="btn btn-outline" onClick={() => navigate("/history")}>
+            <History size={16} /> History
           </button>
-          <button 
-            className="btn btn-outline"
-            onClick={handlePrint}
-          >
-            🖨️ Print
+          <button className="btn btn-outline" onClick={() => window.print()}>
+            <Printer size={16} /> Print
           </button>
         </div>
 
-        {/* Nearby Specialists Section */}
+        {/* ===== NEARBY ===== */}
         <div className="nearby-section">
-          <h3 className="section-title">
-            <span>📍</span>
-            Find Nearby Specialists
+          <h3>
+            <MapPin size={18} /> Find Nearby Specialists
           </h3>
-          
-          <div className="nearby-actions">
-            <button
-              className="btn btn-primary"
-              onClick={handleFindNearby}
-              disabled={loadingNearby}
-            >
-              {loadingNearby ? 'Finding...' : '🔍 Find Nearby'}
-            </button>
-            
-            {showMap && nearbyPlaces.length > 0 && (
+
+          <button
+            className="btn btn-primary"
+            onClick={handleFindNearby}
+            disabled={loadingNearby}
+          >
+            {loadingNearby ? "Searching…" : "Use My Location"}
+          </button>
+
+          {locationError && (
+            <div className="location-error">
+              <AlertTriangle size={16} />
+              <span>{locationError}</span>
+              <button className="retry-btn" onClick={handleFindNearby}>
+                <RefreshCcw size={14} /> Retry
+              </button>
+            </div>
+          )}
+
+          {/* MANUAL INPUT */}
+          <div className="manual-location-box">
+            <p>Or enter your city / pincode:</p>
+            <div className="manual-input-row">
+              <input
+                type="text"
+                placeholder="e.g. Hyderabad or 500081"
+                value={manualLocation}
+                onChange={(e) => setManualLocation(e.target.value)}
+              />
               <button
                 className="btn btn-outline"
-                onClick={() => setShowMap(!showMap)}
+                onClick={handleManualLocationSearch}
+                disabled={manualLoading}
               >
-                {showMap ? 'Hide Map' : 'Show Map'}
+                {manualLoading ? "Searching…" : "Search"}
               </button>
-            )}
+            </div>
           </div>
 
           {showMap && userLocation && (
-            <div className="map-container">
-              <MapContainer
-                center={[userLocation.lat, userLocation.lng]}
-                zoom={13}
-                style={{ height: '400px', width: '100%' }}
-              >
-                <TileLayer
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            <GoogleMap
+              mapContainerStyle={mapContainerStyle}
+              center={userLocation}
+              zoom={13}
+            >
+              <Marker
+                position={userLocation}
+                icon="https://maps.gstatic.com/mapfiles/ms2/micons/blue-dot.png"
+              />
+
+              {nearbyPlaces.map((p) => (
+                <Marker
+                  key={p.id}
+                  position={{ lat: p.lat, lng: p.lng }}
+                  onClick={() => setActivePlace(p)}
                 />
-                
-                {/* User location marker */}
-                <Marker position={[userLocation.lat, userLocation.lng]}>
-                  <Popup>Your Location</Popup>
-                </Marker>
+              ))}
 
-                {/* Nearby places markers */}
-                {nearbyPlaces.map((place) => (
-                  <Marker
-                    key={place.id}
-                    position={[place.lat, place.lng]}
-                  >
-                    <Popup>
-                      <strong>{place.name}</strong>
-                      <br />
-                      {place.address && <span>{place.address}</span>}
-                    </Popup>
-                  </Marker>
-                ))}
-              </MapContainer>
-            </div>
-          )}
-
-          {nearbyPlaces.length > 0 && (
-            <div className="nearby-list">
-              <h3>Nearby Healthcare Facilities ({nearbyPlaces.length})</h3>
-              <ul>
-                {nearbyPlaces.slice(0, 5).map((place) => (
-                  <li key={place.id} className="nearby-item">
-                    <strong>{place.name}</strong>
-                    {place.address && <small>{place.address}</small>}
+              {activePlace && (
+                <InfoWindow
+                  position={{ lat: activePlace.lat, lng: activePlace.lng }}
+                  onCloseClick={() => setActivePlace(null)}
+                >
+                  <div>
+                    <strong>{activePlace.name}</strong>
+                    <br />
+                    <small>{activePlace.address}</small>
+                    <br />
                     <a
-                      href={`https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`}
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${activePlace.lat},${activePlace.lng}`}
                       target="_blank"
-                      rel="noopener noreferrer"
-                      className="directions-link"
+                      rel="noreferrer"
                     >
-                      Get Directions →
+                      <Navigation size={14} /> Directions
                     </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {showMap && nearbyPlaces.length === 0 && !loadingNearby && (
-            <p className="text-muted" style={{ textAlign: 'center', marginTop: '16px' }}>
-              No nearby specialists found. Try increasing the search radius.
-            </p>
+                  </div>
+                </InfoWindow>
+              )}
+            </GoogleMap>
           )}
         </div>
       </div>

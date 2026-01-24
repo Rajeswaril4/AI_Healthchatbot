@@ -1,0 +1,523 @@
+/* Admin Dashboard Styles */
+
+.admin-container {
+  padding: 30px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.admin-header h1 {
+  color: var(--accent);
+  font-size: 2rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+body.dark .admin-header h1 {
+  color: var(--accent-dark);
+}
+
+.admin-nav {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+.stat-card {
+  background: var(--card-light);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  transition: transform 0.2s;
+}
+
+body.dark .stat-card {
+  background: var(--card-dark);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+}
+
+.stat-icon {
+  font-size: 3rem;
+}
+
+.stat-content h3 {
+  margin: 0 0 8px 0;
+  font-size: 0.9rem;
+  color: #667085;
+  font-weight: 600;
+}
+
+body.dark .stat-content h3 {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.stat-value {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+body.dark .stat-value {
+  color: var(--accent-dark);
+}
+
+.stat-label {
+  margin: 4px 0 0 0;
+  font-size: 0.85rem;
+  color: #999;
+}
+
+/* Admin Section */
+.admin-section {
+  background: var(--card-light);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  margin-bottom: 24px;
+}
+
+body.dark .admin-section {
+  background: var(--card-dark);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.admin-section h2 {
+  margin: 0 0 20px 0;
+  font-size: 1.4rem;
+  color: var(--primary-color);
+}
+
+body.dark .admin-section h2 {
+  color: var(--accent-dark);
+}
+
+/* Disease List */
+.disease-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.disease-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+
+body.dark .disease-item {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.disease-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+body.dark .disease-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.disease-rank {
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: var(--primary-color);
+  min-width: 40px;
+}
+
+body.dark .disease-rank {
+  color: var(--accent-dark);
+}
+
+.disease-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.disease-count {
+  color: #667085;
+  font-size: 0.9rem;
+}
+
+body.dark .disease-count {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Filters */
+.admin-filters {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.search-input,
+.filter-select {
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  font-size: 1rem;
+  background: var(--card-light);
+  color: var(--text-light);
+  transition: border-color 0.2s;
+}
+
+body.dark .search-input,
+body.dark .filter-select {
+  background: var(--card-dark);
+  color: var(--text-dark);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.search-input {
+  flex: 1;
+  min-width: 250px;
+}
+
+.search-input:focus,
+.filter-select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.filter-select {
+  min-width: 150px;
+}
+
+/* Table */
+.table-container {
+  background: var(--card-light);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  overflow-x: auto;
+  margin-bottom: 24px;
+}
+
+body.dark .table-container {
+  background: var(--card-dark);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table thead th {
+  text-align: left;
+  padding: 12px 16px;
+  font-weight: 700;
+  color: var(--primary-color);
+  border-bottom: 2px solid rgba(0, 0, 0, 0.1);
+  white-space: nowrap;
+}
+
+body.dark .admin-table thead th {
+  color: var(--accent-dark);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+}
+
+.admin-table tbody td {
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+body.dark .admin-table tbody td {
+  border-bottom-color: rgba(255, 255, 255, 0.05);
+}
+
+.admin-table tbody tr:hover {
+  background: rgba(74, 144, 226, 0.05);
+}
+
+body.dark .admin-table tbody tr:hover {
+  background: rgba(123, 211, 137, 0.05);
+}
+
+.inactive-row {
+  opacity: 0.6;
+}
+
+.date-cell {
+  font-size: 0.85rem;
+  color: #667085;
+  white-space: nowrap;
+}
+
+body.dark .date-cell {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.symptoms-cell {
+  max-width: 300px;
+}
+
+.symptoms-scroll {
+  max-height: 60px;
+  overflow-y: auto;
+  font-size: 0.85rem;
+}
+
+/* Status Badge */
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.status-badge.active {
+  background: rgba(46, 204, 113, 0.15);
+  color: #27ae60;
+}
+
+.status-badge.inactive {
+  background: rgba(149, 165, 166, 0.15);
+  color: #7f8c8d;
+}
+
+/* Role Select */
+.role-select {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--bg-light);
+  color: var(--text-light);
+  font-size: 0.9rem;
+}
+
+body.dark .role-select {
+  background: var(--bg-dark);
+  color: var(--text-dark);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Action Buttons */
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-icon {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: all 0.2s;
+}
+
+.btn-icon:hover {
+  transform: scale(1.1);
+}
+
+.btn-icon.btn-danger {
+  color: #e74c3c;
+}
+
+.btn-icon.btn-danger:hover {
+  background: rgba(231, 76, 60, 0.1);
+}
+
+.btn-icon.btn-warning {
+  color: #f39c12;
+}
+
+.btn-icon.btn-warning:hover {
+  background: rgba(243, 156, 18, 0.1);
+}
+
+.btn-icon.btn-success {
+  color: #2ecc71;
+}
+
+.btn-icon.btn-success:hover {
+  background: rgba(46, 204, 113, 0.1);
+}
+
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.page-info {
+  color: #667085;
+  font-size: 0.9rem;
+}
+
+body.dark .page-info {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Activity Logs */
+.logs-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.log-item {
+  background: var(--card-light);
+  border-radius: 10px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  display: flex;
+  gap: 16px;
+  transition: transform 0.2s;
+}
+
+body.dark .log-item {
+  background: var(--card-dark);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.log-item:hover {
+  transform: translateX(4px);
+}
+
+.log-icon {
+  font-size: 1.8rem;
+  flex-shrink: 0;
+}
+
+.log-content {
+  flex: 1;
+}
+
+.log-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.log-admin {
+  font-weight: 600;
+  color: var(--text-light);
+}
+
+body.dark .log-admin {
+  color: var(--text-dark);
+}
+
+.log-action {
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.log-details {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.log-target {
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  color: #667085;
+}
+
+body.dark .log-target {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.log-extra {
+  font-size: 0.8rem;
+  color: #999;
+  font-family: monospace;
+}
+
+.log-date {
+  font-size: 0.8rem;
+  color: #999;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .admin-container {
+    padding: 16px;
+  }
+
+  .admin-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .admin-nav {
+    width: 100%;
+  }
+
+  .admin-nav .btn {
+    flex: 1;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-filters {
+    flex-direction: column;
+  }
+
+  .search-input,
+  .filter-select {
+    width: 100%;
+  }
+
+  .table-container {
+    padding: 12px;
+  }
+
+  .admin-table {
+    font-size: 0.85rem;
+  }
+
+  .admin-table thead th,
+  .admin-table tbody td {
+    padding: 10px 8px;
+  }
+
+  .symptoms-cell {
+    max-width: 200px;
+  }
+}
