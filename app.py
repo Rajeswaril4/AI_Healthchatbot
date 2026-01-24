@@ -90,22 +90,22 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
     )
 else:
     google = None
-    print("⚠️ Google OAuth not configured - GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET missing")
+    print(" Google OAuth not configured - GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET missing")
 
 # JWT error handlers
 @jwt.unauthorized_loader
 def _missing_token(err):
-    print(f"🚨 Unauthorized: {err}")
+    print(f" Unauthorized: {err}")
     return jsonify({"ok": False, "error": "Missing or invalid access token"}), 401
 
 @jwt.invalid_token_loader
 def _invalid_token(err):
-    print(f"🚨 Invalid token: {err}")
+    print(f" Invalid token: {err}")
     return jsonify({"ok": False, "error": "Invalid token format"}), 401
 
 @jwt.expired_token_loader
 def _expired_token(jwt_header, jwt_payload):
-    print("🚨 Token expired")
+    print(" Token expired")
     return jsonify({"ok": False, "error": "Token expired. Please refresh."}), 401
 
 # Request logging
@@ -113,7 +113,7 @@ def _expired_token(jwt_header, jwt_payload):
 def log_request_info():
     if request.path.startswith('/api/'):
         auth = request.headers.get('Authorization', 'None')
-        print(f"\n📨 {request.method} {request.path}")
+        print(f"\n{request.method} {request.path}")
         print(f"   Authorization: {auth[:40]}..." if len(auth) > 40 else f"   Authorization: {auth}")
 
 # CORS configuration
@@ -176,12 +176,12 @@ def send_welcome_email(user_email: str, username: str = None):
     """Send welcome email to newly registered users"""
     try:
         if not SMTP_USERNAME or not SMTP_PASSWORD:
-            print("⚠️ SMTP credentials not configured, skipping email")
+            print(" SMTP credentials not configured, skipping email")
             return False
         
         # Create message
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = '🎉 Welcome to AI HealthBot!'
+        msg['Subject'] = ' Welcome to AI HealthBot!'
         msg['From'] = FROM_EMAIL
         msg['To'] = user_email
         
@@ -495,134 +495,151 @@ def google_login():
     try:
         if not google:
             return jsonify({"error": "Google OAuth not configured"}), 500
-            
-        redirect_uri = request.args.get('redirect_uri', 'http://localhost:5173/auth/google/callback')
-        print(f" Google OAuth initiated with redirect_uri: {redirect_uri}")
         
-        return google.authorize_redirect(redirect_uri)
+        # The callback URL should point to THIS backend
+        callback_url = "http://localhost:5000/api/auth/google/callback"
+        
+        print(f" Starting Google OAuth")
+        print(f"   Callback URL: {callback_url}")
+        
+        return google.authorize_redirect(callback_url)
         
     except Exception as e:
-        print(f" Google OAuth initiation error: {e}")
+        print(f" Google OAuth error: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": "Failed to initiate Google login"}), 500
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/auth/google/callback', methods=['GET'])
 def google_callback():
     """Handle Google OAuth callback"""
     try:
-        if not google:
-            return redirect(f"http://localhost:5173/login?error=Google OAuth not configured")
-            
-        # Get the authorization token
-        token = google.authorize_access_token()
+        print("\n" + "="*60)
+        print(" Google callback received")
         
-        # Get user info from Google
+        if not google:
+            print(" Google not configured")
+            return redirect("http://localhost:5173/login?error=oauth_not_configured")
+        
+        # Check for errors
+        error = request.args.get('error')
+        if error:
+            print(f" OAuth error: {error}")
+            return redirect(f"http://localhost:5173/login?error={error}")
+        
+        # Get access token from Google
+        print(" Getting token from Google...")
+        token = google.authorize_access_token()
+        print(" Token received from Google")
+        
+        # Get user info
+        print("👤 Getting user info...")
         resp = google.get('https://www.googleapis.com/oauth2/v2/userinfo')
         user_info = resp.json()
-        
-        print(f"📧 Google user info: {user_info}")
         
         google_id = user_info.get('id')
         email = user_info.get('email')
         name = user_info.get('name', '').split()[0] if user_info.get('name') else None
         
-        if not google_id or not email:
-            return redirect(f"http://localhost:5173/login?error=Invalid Google response")
+        print(f" User email: {email}")
         
-        # Check if user exists with this Google ID
+        if not google_id or not email:
+            print(" Invalid user info")
+            return redirect("http://localhost:5173/login?error=invalid_user_info")
+        
+        # Find or create user
         user = User.query.filter_by(google_id=google_id).first()
-        is_new_user = False
         
         if not user:
-            # Check if user exists with this email
             user = User.query.filter_by(email=email).first()
-            
             if user:
-                # Link Google account to existing user
                 user.google_id = google_id
                 db.session.commit()
-                print(f" Linked Google account to existing user: {user.email}")
+                print(f" Linked Google to existing user")
             else:
-                # Create new user
-                user = User(
-                    email=email,
-                    username=name,
-                    google_id=google_id
-                )
+                user = User(email=email, username=name, google_id=google_id)
                 db.session.add(user)
                 db.session.commit()
-                is_new_user = True
-                print(f" New user created via Google: {user.email}")
+                print(f" Created new user: {email}")
                 
-                # Send welcome email to new users
+                # Try to send welcome email
                 try:
                     send_welcome_email(user.email, user.username)
-                except Exception as email_error:
-                    print(f" Email sending failed: {email_error}")
+                except:
+                    pass
+        else:
+            print(f" Existing user: {email}")
         
-        # Create tokens
+        # Create JWT tokens
+        print(f" Creating JWT for user_id: {user.id}")
         access_token = create_access_token(identity=str(user.id))
         refresh_token = create_refresh_token(identity=str(user.id))
         
-        # Redirect back to frontend with token
-        redirect_url = f"http://localhost:5173/auth/google/callback?token={access_token}"
+        print(f" JWT created")
+        print(f"   Token preview: {access_token[:50]}...")
         
-        return redirect(redirect_url)
+        # Build redirect URL WITH the token
+        frontend_url = f"http://localhost:5173/auth/google/callback?token={access_token}"
+        
+        print(f" Redirecting to frontend:")
+        print(f"   URL: {frontend_url[:80]}...")
+        print(f"   Has token param: {'token=' in frontend_url}")
+        print("="*60 + "\n")
+        
+        return redirect(frontend_url)
         
     except Exception as e:
-        print(f" Google OAuth callback error: {e}")
+        print(f" Exception in callback: {e}")
         import traceback
         traceback.print_exc()
-        return redirect(f"http://localhost:5173/login?error=Google authentication failed")
+        return redirect("http://localhost:5173/login?error=callback_failed")
+
+
 @app.route('/api/auth/google/verify', methods=['POST'])
 def google_verify_token():
-    """Verify Google OAuth token and return user data"""
+    """Verify the token from URL and return fresh tokens"""
     try:
         data = request.get_json()
         token = data.get('token')
         
         if not token:
+            print(" No token in verify request")
             return jsonify({"error": "Token required"}), 400
         
-        print(f" Verifying Google OAuth token...")
+        print(f" Verifying token: {token[:50]}...")
         
-        # Verify the token is valid by decoding our JWT
-        # The token passed here is already our JWT access_token from the redirect
-        try:
-            from flask_jwt_extended import decode_token
-            decoded = decode_token(token)
-            user_id = int(decoded['sub'])
-            
-            print(f" Token decoded successfully for user_id: {user_id}")
-            
-            user = User.query.get(user_id)
-            if not user:
-                print(f" User not found: {user_id}")
-                return jsonify({"error": "User not found"}), 404
-            
-            # Create fresh tokens
-            access_token = create_access_token(identity=str(user.id))
-            refresh_token = create_refresh_token(identity=str(user.id))
-            
-            print(f" Google verification successful for: {user.email}")
-            
-            return jsonify({
-                "success": True,
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "user": user.to_dict()
-            }), 200
-            
-        except Exception as decode_error:
-            print(f" Token decode error: {decode_error}")
-            return jsonify({"error": "Invalid token"}), 401
+        # Decode the JWT
+        from flask_jwt_extended import decode_token
+        decoded = decode_token(token)
+        user_id = int(decoded['sub'])
+        
+        print(f" Token valid for user_id: {user_id}")
+        
+        # Get user
+        user = User.query.get(user_id)
+        if not user:
+            print(f" User {user_id} not found")
+            return jsonify({"error": "User not found"}), 404
+        
+        # Create fresh tokens
+        new_access = create_access_token(identity=str(user.id))
+        new_refresh = create_refresh_token(identity=str(user.id))
+        
+        print(f" Fresh tokens created for {user.email}")
+        
+        return jsonify({
+            "success": True,
+            "access_token": new_access,
+            "refresh_token": new_refresh,
+            "user": user.to_dict()
+        }), 200
         
     except Exception as e:
-        print(f" Google verify error: {e}")
+        print(f" Verify error: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": "Verification failed"}), 500
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/refresh', methods=['POST'])
 @jwt_required(refresh=True)
@@ -631,7 +648,7 @@ def refresh():
         identity_str = get_jwt_identity()
         user_id = int(identity_str)
         
-        print(f"🔄 Refreshing token for user_id: {user_id}")
+        print(f" Refreshing token for user_id: {user_id}")
         
         user = User.query.get(user_id)
         if not user:
@@ -639,7 +656,7 @@ def refresh():
         
         access_token = create_access_token(identity=str(user_id))
         
-        print(f"✅ Token refreshed for user_id: {user_id}")
+        print(f" Token refreshed for user_id: {user_id}")
         
         return jsonify({
             "access_token": access_token,
@@ -647,10 +664,10 @@ def refresh():
         }), 200
         
     except ValueError as ve:
-        print(f"❌ Invalid user_id format: {ve}")
+        print(f" Invalid user_id format: {ve}")
         return jsonify({"error": "Invalid token identity"}), 401
     except Exception as e:
-        print(f"❌ Refresh error: {e}")
+        print(f" Refresh error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": "Token refresh failed"}), 401
@@ -686,7 +703,7 @@ def get_history():
         identity_str = get_jwt_identity()
         user_id = int(identity_str)
         
-        print(f"📋 History request from user_id: {user_id}")
+        print(f" History request from user_id: {user_id}")
         
         records = (
             Prediction.query
@@ -695,14 +712,14 @@ def get_history():
             .all()
         )
         
-        print(f"✅ Found {len(records)} predictions for user {user_id}")
+        print(f" Found {len(records)} predictions for user {user_id}")
 
         history_payload = []
         for rec in records:
             try:
                 symptoms = json.loads(rec.selected_symptoms or "[]")
             except Exception as e:
-                print(f"⚠️ Error parsing symptoms for record {rec.id}: {e}")
+                print(f" Error parsing symptoms for record {rec.id}: {e}")
                 symptoms = []
             
             history_payload.append({
@@ -722,10 +739,10 @@ def get_history():
         }), 200
         
     except ValueError as ve:
-        print(f"❌ Invalid user_id format: {ve}")
+        print(f" Invalid user_id format: {ve}")
         return jsonify({'error': 'Invalid token identity'}), 401
     except Exception as e:
-        print(f'❌ History fetch error: {e}')
+        print(f' History fetch error: {e}')
         import traceback
         traceback.print_exc()
         return jsonify({'error': 'Failed to fetch history', 'details': str(e)}), 500
@@ -787,9 +804,9 @@ def predict():
             )
             db.session.add(rec)
             db.session.commit()
-            print(f"✅ Prediction saved (ID: {rec.id}, user_id: {user_id})")
+            print(f" Prediction saved (ID: {rec.id}, user_id: {user_id})")
         except Exception as db_err:
-            print(f"❌ Failed to save prediction: {db_err}")
+            print(f" Failed to save prediction: {db_err}")
             import traceback
             traceback.print_exc()
             db.session.rollback()
@@ -807,10 +824,10 @@ def predict():
         })
         
     except ValueError as ve:
-        print(f"❌ Invalid user_id format: {ve}")
+        print(f" Invalid user_id format: {ve}")
         return jsonify({'ok': False, 'error': 'Invalid token identity'}), 401
     except Exception as e:
-        print("❌ Prediction error:", e)
+        print(" Prediction error:", e)
         import traceback
         traceback.print_exc()
         return jsonify({'ok': False, 'error': str(e)}), 500

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import '../styles/Auth.css';
 
@@ -13,6 +13,18 @@ const Login = () => {
 
   const { login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Check for error from Google OAuth redirect
+  useEffect(() => {
+    if (location.state?.error) {
+      console.log('📢 Showing error from redirect:', location.state.error);
+      setError(location.state.error);
+      
+      // Clear the error from location state after displaying
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   const handleChange = (e) => {
     setFormData({
@@ -38,6 +50,8 @@ const Login = () => {
   };
 
   const handleGoogleLogin = () => {
+    console.log('🔐 Initiating Google login...');
+    setError('');
     loginWithGoogle();
   };
 
@@ -46,7 +60,11 @@ const Login = () => {
       <div className="auth-card">
         <h2 className="auth-title">Login to HealthBot</h2>
 
-        {error && <div className="error-message">{error}</div>}
+        {error && (
+          <div className="error-message">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
