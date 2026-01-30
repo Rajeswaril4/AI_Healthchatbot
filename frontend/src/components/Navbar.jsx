@@ -14,7 +14,8 @@ import {
   Moon,
   Sun,
   Image,
-  ImageOff
+  ImageOff,
+  MapPin
 } from "lucide-react";
 import "../styles/Navbar.css";
 
@@ -41,6 +42,10 @@ const Navbar = () => {
       <nav className="navbar-nav">
         <Link to="/" className="nav-link">
           <Home size={16} /> Home
+        </Link>
+
+        <Link to="/nearby" className="nav-link">
+          <MapPin size={16} /> Find Nearby
         </Link>
 
         {user ? (

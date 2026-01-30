@@ -12,6 +12,7 @@ import Register from "./pages/Register";
 import Result from "./pages/Result";
 import History from "./pages/History";
 import GoogleCallback from "./pages/GoogleCallback";
+import Nearby from "./pages/Nearby";
 
 // Admin Pages
 import AdminDashboard from "./pages/AdminDashboard";
@@ -42,6 +43,7 @@ function AppContent() {
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/result" element={<Result />} />
+            <Route path="/nearby" element={<Nearby />} />
 
             {/* Protected User Routes */}
             <Route

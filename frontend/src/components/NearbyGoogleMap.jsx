@@ -1,4 +1,4 @@
-import { GoogleMap, Marker, InfoWindow } from "@react-google-maps/api";
+import { GoogleMap, MarkerF, InfoWindowF } from "@react-google-maps/api";
 import { useMemo, useState } from "react";
 
 const containerStyle = {
@@ -28,26 +28,33 @@ export default function NearbyGoogleMap({ userLocation, places }) {
         fullscreenControl: false,
         streetViewControl: false,
         mapTypeControl: false,
-        gestureHandling: "greedy"
+        gestureHandling: "greedy",
+        mapId: "healthcare_map" // Add Map ID
       }}
     >
-      {/* USER LOCATION */}
-      <Marker
+      {/* USER LOCATION - Using MarkerF */}
+      <MarkerF
         position={userLocation}
-        icon="https://maps.gstatic.com/mapfiles/ms2/micons/blue-dot.png"
+        icon={{
+          url: "https://maps.gstatic.com/mapfiles/ms2/micons/blue-dot.png",
+          scaledSize: new window.google.maps.Size(32, 32)
+        }}
+        title="Your Location"
       />
 
-      {/* NEARBY PLACES */}
+      {/* NEARBY PLACES - Using MarkerF */}
       {places.map(place => (
-        <Marker
+        <MarkerF
           key={place.id}
           position={{ lat: place.lat, lng: place.lng }}
           onClick={() => setActivePlace(place)}
+          title={place.name}
         />
       ))}
 
+      {/* InfoWindow - Using InfoWindowF */}
       {activePlace && (
-        <InfoWindow
+        <InfoWindowF
           position={{ lat: activePlace.lat, lng: activePlace.lng }}
           onCloseClick={() => setActivePlace(null)}
         >
@@ -56,7 +63,7 @@ export default function NearbyGoogleMap({ userLocation, places }) {
             <br />
             <small>{activePlace.address}</small>
           </div>
-        </InfoWindow>
+        </InfoWindowF>
       )}
     </GoogleMap>
   );

@@ -839,15 +839,16 @@ def refresh():
         identity_str = get_jwt_identity()
         user_id = int(identity_str)
         
-        print(f" Refreshing token for user_id: {user_id}")
+        print(f"🔄 Refreshing token for user_id: {user_id}")
         
-        user = User.query.get(user_id)
+        # FIXED: Use db.session.get() instead of User.query.get()
+        user = db.session.get(User, user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
         
         access_token = create_access_token(identity=str(user_id))
         
-        print(f" Token refreshed for user_id: {user_id}")
+        print(f"✅ Token refreshed for user_id: {user_id}")
         
         return jsonify({
             "access_token": access_token,
@@ -855,14 +856,13 @@ def refresh():
         }), 200
         
     except ValueError as ve:
-        print(f" Invalid user_id format: {ve}")
+        print(f"❌ Invalid user_id format: {ve}")
         return jsonify({"error": "Invalid token identity"}), 401
     except Exception as e:
-        print(f" Refresh error: {e}")
+        print(f"❌ Refresh error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": "Token refresh failed"}), 401
-
 @app.route('/api/user', methods=['GET'])
 @jwt_required()
 def get_current_user():
@@ -937,91 +937,6 @@ def get_history():
         import traceback
         traceback.print_exc()
         return jsonify({'error': 'Failed to fetch history', 'details': str(e)}), 500
-
-@app.route('/api/predict', methods=['POST'])
-@jwt_required()
-def predict():
-    try:
-        identity_str = get_jwt_identity()
-        user_id = int(identity_str)
-        
-        print(f"🔍 Prediction from user_id: {user_id}")
-        
-        data = request.get_json() or {}
-        selected_symptoms = data.get('symptoms', [])
-        
-        if not selected_symptoms:
-            return jsonify({'ok': False, 'error': 'Please select at least one symptom'}), 400
-        
-        input_data = [1 if symptom in selected_symptoms else 0 for symptom in symptom_columns]
-        prediction = model.predict([input_data])[0]
-        disease_name = str(prediction).strip()
-        disease_norm = normalize_name(disease_name)
-        
-        confidence_value = 0.5
-        try:
-            if hasattr(model, "predict_proba"):
-                probs = model.predict_proba([input_data])[0]
-                classes = np.array(getattr(model, "classes_", []), dtype=object)
-                match_idx = np.where(classes == prediction)[0]
-                if match_idx.size == 0:
-                    match_idx = np.where(np.char.lower(classes.astype(str)) == disease_name.lower())[0]
-                if match_idx.size:
-                    confidence_value = float(probs[int(match_idx[0])])
-                else:
-                    confidence_value = float(probs.max())
-        except Exception as ce:
-            print("Confidence error:", ce)
-        
-        disease_details = None
-        for k, v in disease_info.items():
-            if normalize_name(k) == disease_norm or k.lower() == disease_name.lower():
-                disease_details = v
-                break
-        
-        description = disease_details.get("description", "No description available.") if disease_details else "No description available."
-        precautions = disease_details.get("precautions", []) if disease_details else []
-        
-        specialist = get_specialist_local(disease_name)
-        
-        try:
-            rec = Prediction(
-                user_id=user_id,
-                disease=disease_name,
-                specialist=specialist,
-                confidence=float(confidence_value),
-                selected_symptoms=json.dumps(selected_symptoms),
-                description=description
-            )
-            db.session.add(rec)
-            db.session.commit()
-            print(f" Prediction saved (ID: {rec.id}, user_id: {user_id})")
-        except Exception as db_err:
-            print(f" Failed to save prediction: {db_err}")
-            import traceback
-            traceback.print_exc()
-            db.session.rollback()
-            return jsonify({'ok': False, 'error': 'Failed to save prediction'}), 500
-        
-        return jsonify({
-            'ok': True,
-            'disease': disease_name,
-            'description': description,
-            'specialist': specialist,
-            'precautions': precautions,
-            'confidence': confidence_value,
-            'selected_symptoms': selected_symptoms,
-            'prediction_id': rec.id
-        })
-        
-    except ValueError as ve:
-        print(f" Invalid user_id format: {ve}")
-        return jsonify({'ok': False, 'error': 'Invalid token identity'}), 401
-    except Exception as e:
-        print(" Prediction error:", e)
-        import traceback
-        traceback.print_exc()
-        return jsonify({'ok': False, 'error': str(e)}), 500
 
 # Debug endpoints
 @app.route('/api/debug/predictions', methods=['GET'])
@@ -1132,6 +1047,28 @@ def query_overpass(query_text: str, timeout_seconds: int = 60):
         except Exception as e:
             print(f"Overpass error at {url}:", e)
     raise RuntimeError("All Overpass endpoints failed")
+
+# Simple in-memory cache for Overpass queries
+_OVERPASS_CACHE = {}
+_OVERPASS_CACHE_TTL_SECONDS = 600
+
+
+def get_cache_key(lat: float, lng: float, radius: int, specialist: str) -> str:
+    specialist_norm = normalize_name(specialist)
+    return f"nearby:{lat:.5f}:{lng:.5f}:{radius}:{specialist_norm}"
+
+
+def query_overpass_with_cache(query_text: str, cache_key: str, timeout_seconds: int = 60):
+    now = datetime.utcnow().timestamp()
+    cached = _OVERPASS_CACHE.get(cache_key)
+    if cached:
+        cached_at, payload = cached
+        if now - cached_at < _OVERPASS_CACHE_TTL_SECONDS:
+            return payload
+
+    payload = query_overpass(query_text, timeout_seconds=timeout_seconds)
+    _OVERPASS_CACHE[cache_key] = (now, payload)
+    return payload
 
 def _build_overpass_query(lat: float, lon: float, radius: int, specialist_token: str):
     tok = re.sub(r"[^a-zA-Z0-9\s\-]", " ", (specialist_token or "")).strip()
@@ -1427,47 +1364,97 @@ def admin_delete_user(admin_user, user_id):
         return jsonify({"error": "Failed to delete user"}), 500
 
 
-@app.route('/api/admin/predictions', methods=['GET'])
-@admin_required
-def admin_get_predictions(admin_user):
-    """Get all predictions with pagination"""
+@app.route('/api/predict', methods=['POST'])
+@jwt_required()
+def predict():
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        user_id_filter = request.args.get('user_id', None, type=int)
+        identity_str = get_jwt_identity()
+        user_id = int(identity_str)
         
-        query = Prediction.query
+        print(f"🔍 Prediction from user_id: {user_id}")
         
-        # User filter
-        if user_id_filter:
-            query = query.filter_by(user_id=user_id_filter)
+        data = request.get_json() or {}
+        selected_symptoms = data.get('symptoms', [])
         
-        # Order by created_at descending
-        query = query.order_by(Prediction.created_at.desc())
+        if not selected_symptoms:
+            return jsonify({'ok': False, 'error': 'Please select at least one symptom'}), 400
         
-        # Paginate
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        # FIXED: Create proper DataFrame with feature names
+        import pandas as pd
+        input_data = [1 if symptom in selected_symptoms else 0 for symptom in symptom_columns]
         
-        predictions = [pred.to_admin_dict() for pred in pagination.items]
+        # Create DataFrame with proper column names to avoid warning
+        input_df = pd.DataFrame([input_data], columns=symptom_columns)
+        
+        # Use DataFrame for prediction
+        prediction = model.predict(input_df)[0]
+        disease_name = str(prediction).strip()
+        disease_norm = normalize_name(disease_name)
+        
+        confidence_value = 0.5
+        try:
+            if hasattr(model, "predict_proba"):
+                probs = model.predict_proba(input_df)[0]
+                classes = np.array(getattr(model, "classes_", []), dtype=object)
+                match_idx = np.where(classes == prediction)[0]
+                if match_idx.size == 0:
+                    match_idx = np.where(np.char.lower(classes.astype(str)) == disease_name.lower())[0]
+                if match_idx.size:
+                    confidence_value = float(probs[int(match_idx[0])])
+                else:
+                    confidence_value = float(probs.max())
+        except Exception as ce:
+            print("Confidence error:", ce)
+        
+        disease_details = None
+        for k, v in disease_info.items():
+            if normalize_name(k) == disease_norm or k.lower() == disease_name.lower():
+                disease_details = v
+                break
+        
+        description = disease_details.get("description", "No description available.") if disease_details else "No description available."
+        precautions = disease_details.get("precautions", []) if disease_details else []
+        
+        specialist = get_specialist_local(disease_name)
+        
+        try:
+            rec = Prediction(
+                user_id=user_id,
+                disease=disease_name,
+                specialist=specialist,
+                confidence=float(confidence_value),
+                selected_symptoms=json.dumps(selected_symptoms),
+                description=description
+            )
+            db.session.add(rec)
+            db.session.commit()
+            print(f"✅ Prediction saved (ID: {rec.id}, user_id: {user_id})")
+        except Exception as db_err:
+            print(f"❌ Failed to save prediction: {db_err}")
+            import traceback
+            traceback.print_exc()
+            db.session.rollback()
+            return jsonify({'ok': False, 'error': 'Failed to save prediction'}), 500
         
         return jsonify({
-            "ok": True,
-            "predictions": predictions,
-            "pagination": {
-                "page": page,
-                "per_page": per_page,
-                "total": pagination.total,
-                "pages": pagination.pages,
-                "has_next": pagination.has_next,
-                "has_prev": pagination.has_prev
-            }
-        }), 200
+            'ok': True,
+            'disease': disease_name,
+            'description': description,
+            'specialist': specialist,
+            'precautions': precautions,
+            'confidence': confidence_value,
+            'selected_symptoms': selected_symptoms,
+            'prediction_id': rec.id
+        })
         
+    except ValueError as ve:
+        print(f"❌ Invalid user_id format: {ve}")
+        return jsonify({'ok': False, 'error': 'Invalid token identity'}), 401
     except Exception as e:
-        print(f"❌ Admin get predictions error: {e}")
+        print("❌ Prediction error:", e)
         import traceback
         traceback.print_exc()
-        return jsonify({"error": "Failed to fetch predictions"}), 500
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 
 @app.route('/api/admin/predictions/<int:prediction_id>', methods=['DELETE'])
@@ -1549,12 +1536,23 @@ def nearby():
         radius = request.args.get('radius', default=5000, type=int)
         specialist = request.args.get('specialist', default="", type=str)
         
+        # Generate cache key
+        cache_key = get_cache_key(lat, lng, radius, specialist)
+        
         q = _build_overpass_query(lat, lng, radius, specialist)
         
         try:
-            data = query_overpass(q, timeout_seconds=60)
-        except RuntimeError:
-            return jsonify({"ok": False, "error": "Service temporarily unavailable"}), 502
+            # Use cached query
+            data = query_overpass_with_cache(q, cache_key, timeout_seconds=30)
+        except Exception as e:
+            print(f"❌ Overpass error: {e}")
+            # Return empty results instead of error
+            return jsonify({
+                "ok": True, 
+                "count": 0, 
+                "places": [],
+                "message": "Unable to fetch data at this time. Please try again later."
+            }), 200
         
         elements = data.get("elements", [])
         places = []
@@ -1595,7 +1593,9 @@ def nearby():
         return jsonify({"ok": True, "count": len(places), "places": places})
         
     except Exception as e:
-        print("Nearby error:", e)
+        print("❌ Nearby error:", e)
+        import traceback
+        traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
