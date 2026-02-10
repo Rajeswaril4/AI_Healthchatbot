@@ -62,4 +62,5 @@ jobs:
           app-name: 'aihealth-frontend'
           slot-name: 'Production'
           package: .
+
           
