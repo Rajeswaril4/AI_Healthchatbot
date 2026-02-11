@@ -688,7 +688,7 @@ def google_login():
             return jsonify({"error": "Google OAuth not configured"}), 500
         
         # The callback URL should point to THIS backend
-       callback_url = os.getenv(
+        callback_url = os.getenv(
     "GOOGLE_CALLBACK_URL",
     "http://localhost:5000/api/auth/google/callback"
 )
