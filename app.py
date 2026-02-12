@@ -179,6 +179,8 @@ class User(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'prediction_count': Prediction.query.filter_by(user_id=self.id).count()
         }
+
+
 def create_default_admin():
     admin_email = os.getenv("ADMIN_EMAIL")
     admin_password = os.getenv("ADMIN_PASSWORD")
@@ -195,9 +197,9 @@ def create_default_admin():
         if admin.role != "admin":
             admin.role = "admin"
             db.session.commit()
-            print(f"✅ Existing user promoted to admin: {admin_email}")
+            print(f" Existing user promoted to admin: {admin_email}")
         else:
-            print("ℹ️ Admin already exists.")
+            print(" Admin already exists.")
         return
 
     # Create new admin
@@ -212,7 +214,7 @@ def create_default_admin():
     db.session.add(admin)
     db.session.commit()
 
-    print(f"✅ Default admin created: {admin_email}")
+    print(f"Default admin created: {admin_email}")
 
 
 class Prediction(db.Model):
@@ -306,6 +308,8 @@ def log_admin_action(admin_id: int, action: str, target_type: str = None,
     except Exception as e:
         print(f" Failed to log admin action: {e}")
         db.session.rollback()
+
+
 def admin_required(fn):
     """Decorator to require admin role for a route"""
     @wraps(fn)
@@ -362,6 +366,8 @@ def active_user_required(fn):
             return jsonify({"error": "Authorization failed"}), 500
     
     return wrapper
+
+
 # Email Helper Function
 def send_welcome_email(user_email: str, username: str = None):
     """Send welcome email to newly registered users"""
@@ -689,9 +695,9 @@ def google_login():
         
         # The callback URL should point to THIS backend
         callback_url = os.getenv(
-    "GOOGLE_CALLBACK_URL",
-    "http://localhost:5000/api/auth/google/callback"
-)
+            "GOOGLE_CALLBACK_URL",
+            "http://localhost:5000/api/auth/google/callback"
+        )
 
         
         print(f" Starting Google OAuth")
@@ -867,6 +873,8 @@ def refresh():
         import traceback
         traceback.print_exc()
         return jsonify({"error": "Token refresh failed"}), 401
+
+
 @app.route('/api/user', methods=['GET'])
 @jwt_required()
 def get_current_user():
