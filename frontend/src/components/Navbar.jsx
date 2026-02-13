@@ -95,19 +95,8 @@ const Navbar = () => {
           {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
         </button>
 
-        {/* BACKGROUND TOGGLE */}
-        <button
-          onClick={toggleBackground}
-          className="theme-btn"
-          aria-label={`${backgroundVisible ? "Hide" : "Show"} background image`}
-          title={`${backgroundVisible ? "Hide" : "Show"} background`}
-        >
-          {backgroundVisible ? (
-            <ImageOff size={18} />
-          ) : (
-            <Image size={18} />
-          )}
-        </button>
+        
+
       </nav>
     </header>
   );
