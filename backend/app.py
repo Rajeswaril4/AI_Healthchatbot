@@ -62,14 +62,16 @@ FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USERNAME)
 
 BASE_DIR = Path(__file__).parent
 
-# MySQL Database Configuration
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_NAME = os.getenv("DB_NAME", "aihealthbot")
-DB_PORT = os.getenv("DB_PORT", "3306")
+# Database Configuration (works locally and on Render)
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-app.config["SQLALCHEMY_DATABASE_URI"] = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+if DATABASE_URL:
+    # Render / production database
+    app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+else:
+    # Local development fallback
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + str(BASE_DIR / "aihealthbot.db")
+
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # Extensions
@@ -1611,11 +1613,15 @@ def nearby():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
-if __name__ == "__main__":
+def init_db():
     with app.app_context():
         db.create_all()
         create_default_admin()
 
-    port = int(os.getenv("PORT", 5000))
-    debug_flag = os.getenv("FLASK_ENV", "development") == "development"
-    app.run(debug=debug_flag, port=port, host="0.0.0.0")
+# Initialize DB on startup (works for local + Render web process)
+init_db()
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "5000"))
+    debug_flag = os.getenv("FLASK_DEBUG", "0").lower() in ("1", "true", "yes")
+    app.run(host="0.0.0.0", port=port, debug=debug_flag)
