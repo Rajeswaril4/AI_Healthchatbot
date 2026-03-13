@@ -560,6 +560,13 @@ def get_specialist_local(disease_name: str) -> str:
 
 
 # ==================== API ROUTES ====================
+@app.route("/", methods=["GET"])
+def root():
+    return jsonify({
+        "status": "running",
+        "service": "AI HealthBot API",
+        "version": "1.0"
+    })
 
 @app.route('/api/health', methods=['GET'])
 def health():
@@ -1370,4 +1377,4 @@ init_db()
 if __name__ == "__main__":
     port       = int(os.getenv("PORT", "5000"))
     debug_flag = os.getenv("FLASK_DEBUG", "0").lower() in ("1", "true", "yes")
-    app.run(host="0.0.0.0", port=port, debug=debug_flag)
+    app.run(host="0.0.0.0", port=port)
